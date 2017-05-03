@@ -457,7 +457,6 @@ SysRender = function()
 					ctx.stroke();
 				}
 				
-				
 				// For debug puposes we will draw the bounding box
 	//			var topleft = e.components["Visible"].Topleft;
 	//			var bottomright = e.components["Visible"].Bottomright;
@@ -566,10 +565,10 @@ SysPhysics = function()
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
 			var e = entities[layer].data[eIdx];
-			if (e && e.components["Camera"] && e.components["Position"])
+			if (e && e.components.Camera && e.components.Position)
 			{
-				cameraPosX = e.components["Position"].Position.x;
-				cameraPosY = e.components["Position"].Position.y;
+				cameraPosX = e.components.Position.Position.x;
+				cameraPosY = e.components.Position.Position.y;
 			}
 		}
 	}
@@ -579,17 +578,17 @@ SysPhysics = function()
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
 			var e = entities[layer].data[eIdx];
-			if (e && e.components["Position"] && e.components["Physics"])
+			if (e && e.components.Position && e.components.Physics)
 			{
-				var pos = e.components["Position"].Position;
-				var physics = e.components["Physics"];
-				var vel = e.components["Physics"].Velocity;
+				var pos = e.components.Position.Position;
+				var physics = e.components.Physics;
+				var vel = physics.Velocity;
 				
-				if ( e.components["Rotation"] )
+				if ( e.components.Rotation )
 				{
-					var rotation = e.components["Rotation"].Rotation;
-					rotation += e.components["Rotation"].Rotatespeed;
-					e.components["Rotation"].Rotation = rotation;
+					var rotation = e.components.Rotation.Rotation;
+					rotation += e.components.Rotation.Rotatespeed;
+					e.components.Rotation.Rotation = rotation;
 				}
 
 				
@@ -597,8 +596,8 @@ SysPhysics = function()
 				pos.y = pos.y + vel.y;
 				
 				// Apply the drag
-				vel.x *= e.components["Physics"].Drag;
-				vel.y *= e.components["Physics"].Drag;
+				vel.x *= physics.Drag;
+				vel.y *= physics.Drag;
 
 				// limit to max velocity
 				if ( physics.Maxvelocity)
@@ -609,12 +608,12 @@ SysPhysics = function()
 					}
 				}
 
-				if (e.components["Screenwrap"])
+				if (e.components.Screenwrap)
 				{
 					HandleScreenWrap(pos);
 				}
 
-				if (e.components["Screenbounce"])
+				if (e.components.Screenbounce)
 				{
 					HandleScreenBounce(pos,vel);
 				}
@@ -682,29 +681,14 @@ SysEnemies = function()
 	for ( var eIdx=entities[LAYER_ENEMY].length-1; eIdx >= 0; eIdx--)
 	{
 		var e = entities[LAYER_ENEMY].data[eIdx];
-		if (e && e.components["EnemyA"] && e.components["Physics"])
+		if (e && ( e.components.EnemyA || e.components.EnemyB ) )
 		{
-//			if ( e.components["Rotation"] )
-//			{
-//				var rotation = e.components["Rotation"].Rotation;
-//				rotation += Math.PI / 100;
-//				e.components["Rotation"].Rotation = rotation;
-//			}
 			CheckCollided(e);
 		}
-		if (e && e.components["EnemyB"] && e.components["Physics"])
+
+		if ( e.components.Spawner)
 		{
-			if ( e.components["Rotation"])
-			{
-				var rotation = e.components["Rotation"].Rotation;
-				rotation -= Math.PI / 100;
-				e.components["Rotation"].Rotation = rotation;
-			}
-			CheckCollided(e);
-		}
-		if ( e.components["Spawner"])
-		{
-			var spawner = e.components["Spawner"];
+			var spawner = e.components.Spawner;
 			spawner.ElapsedTime++;
 			if ( prefabs.Count(spawner.SpawnPrefabType) < 150)
 			{
@@ -712,10 +696,10 @@ SysEnemies = function()
 				{
 					var xpos = 0;
 					var ypos = 0;
-					if (e.components["Position"])
+					if (e.components.Position)
 					{
-						xpos = e.components["Position"].Position.x;
-						ypos = e.components["Position"].Position.y;
+						xpos = e.components.Position.Position.x;
+						ypos = e.components.Position.Position.y;
 					}
 					spawner.ElapsedTime = 0;
 					if ( spawner.SpawnPrefabType == "EnemyA")
@@ -731,7 +715,7 @@ SysEnemies = function()
 	for ( var eIdx=0; eIdx < entities[LAYER_PLAYER].length; eIdx++)
 	{
 		var e = entities[LAYER_PLAYER].data[eIdx];
-		if (e && e.components["Player"] && e.components["Position"] && e.components["Physics"])
+		if (e && e.components.Player && e.components.Position )
 		{
 			playerEntity = e;
 			break;
@@ -742,18 +726,16 @@ SysEnemies = function()
 	for ( var eIdx=entities[LAYER_POWER_UP].length-1; eIdx >= 0; eIdx--)
 	{
 		var e = entities[LAYER_POWER_UP].data[eIdx];
-		if ( e.components["PowerUp"] && e.components["Physics"] )
+		if ( e.components.PowerUp && e.components.Position && e.components.Physics )
 		{
 			// very basic just move towards player slowly
-			if ( e.components["Physics"] && playerEntity && playerEntity.components["Position"] )
+			if ( e.components["Physics"] && playerEntity )
 			{
 				var physics = e.components["Physics"];
 				var vel = e.components["Physics"].Velocity;
-//				vel.x = 0;
-//				vel.y = 0;
 				
-				var playerPos = playerEntity.components["Position"].Position;
-				var enemyPos = e.components["Position"].Position;
+				var playerPos = playerEntity.components.Position.Position;
+				var enemyPos = e.components.Position.Position;
 				
 				var xlen = playerPos.x - enemyPos.x;
 				var ylen = playerPos.y - enemyPos.y;
@@ -783,11 +765,11 @@ SysEnemies = function()
 			}
 		}
 
-		if (e && e.components["PowerUp"] && e.components["Collide"] && e.components["Collide"].Destroy == false)
+		if (e && e.components.PowerUp && e.components.Collide && e.components.Collide.Destroy == false)
 		{
-			if ( e.components["Collide"].Collided)
+			if ( e.components.Collide.Collided)
 			{
-				e.components["Collide"].Destroy = true;
+				e.components.Collide.Destroy = true;
 				PlaySound(1);
 			}
 		}
@@ -795,13 +777,15 @@ SysEnemies = function()
 
 	function CheckCollided ( e)
 	{
-		if ( e.components["Collide"])
+		if ( e.components.Collide)
 		{
-			if ( e.components["Collide"].Collided)
+			if ( e.components.Collide.Collided)
 			{
-				e.components["Collide"].Destroy = true;
-				CreateExplosion(e.components["Position"].Position, e.components["Visible"].Colour);
-				prefabs.CreatePowerUp(e.components["Position"].Position.x,e.components["Position"].Position.y,0,0);
+				e.components.Collide.Destroy = true;
+				if ( e.components.Position && e.components.Visible)
+					CreateExplosion(e.components["Position"].Position, e.components["Visible"].Colour);
+				if ( e.components.Position )
+					prefabs.CreatePowerUp(e.components.Position.Position.x,e.components.Position.Position.y,0,0);
 				PlaySound(2);
 			}
 		}
@@ -826,13 +810,10 @@ SysPlayer = function()
 {
 	function CallectPowerUps(component)
 	{
-		if ( component)
+		if ( component && component.Collided)
 		{
-			if ( component.Collided)
-			{
 //				console.log("powerup");
-				component.Collided = false;
-			}
+			component.Collided = false;
 		}
 	}
 
@@ -844,14 +825,14 @@ SysPlayer = function()
 		for ( var eIdx=0; eIdx < entities[LAYER_PLAYER].length; eIdx++)
 		{
 			var e = entities[LAYER_PLAYER].data[eIdx];
-			if (e && e.components["Player"] && e.components["Position"] && e.components["Physics"])
+			if (e && e.components.Player && e.components.Position && e.components.Physics && e.components.Rotation)
 			{
-				var pos = e.components["Position"].Position;
-				var rotation = e.components["Rotation"].Rotation;
-				var physics = e.components["Physics"];
-				var player = e.components["Player"];
+				var pos = e.components.Position.Position;
+				var rotation = e.components.Rotation.Rotation;
+				var physics = e.components.Physics;
+				var player = e.components.Player;
 
-				CallectPowerUps(e.components["Collide"]);
+				CallectPowerUps(e.components.Collide);
 				
 				if (keystate[player.KeyRight])
 				{
@@ -886,7 +867,7 @@ SysPlayer = function()
 					PlaySound(0);
 				}
 				
-				e.components["Rotation"].Rotation = rotation;
+				e.components.Rotation.Rotation = rotation;
 			}
 		}
 	}
@@ -896,14 +877,11 @@ SysPlayer = function()
 		for ( var eIdx=entities[LAYER_PLAYER_SHOT].length-1; eIdx >= 0; eIdx--)
 		{
 			var e = entities[LAYER_PLAYER_SHOT].data[eIdx];
-			if (e && e.components["PlayerShot"] && e.components["Position"] && e.components["Physics"])
+			if (e && e.components.PlayerShot && e.components.Collide ) // && e.components["Position"] && e.components["Physics"])
 			{
-				if ( e.components["Collide"])
+				if ( e.components.Collide.Collided)
 				{
-					if ( e.components["Collide"].Collided)
-					{
-						e.components["Collide"].Destroy = true;
-					}
+					e.components.Collide.Destroy = true;
 				}
 			}		
 		}
@@ -922,25 +900,25 @@ SysDestroyer = function()
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
 			var e = entities[layer].data[eIdx];
-			if (e && e.components["Lifespan"] )
+			if (e && e.components.Lifespan )
 			{
-				e.components["Lifespan"].Age+= 1;
-				if ( e.components["Lifespan"].Age >= e.components["Lifespan"].MaxAge)
+				e.components.Lifespan.Age+= 1;
+				if ( e.components.Lifespan.Age >= e.components.Lifespan.MaxAge)
 				{
-					if ( e.components["Prefab"] )
+					if ( e.components.Prefab )
 					{
-						prefabs.Delete(e.components["Prefab"].Type, e.components["Prefab"].Position)
+						prefabs.Delete(e.components.Prefab.Type, e.components.Prefab.Position)
 					}
 					entities[layer].Delete(eIdx);
 				}
 			}
-			if (e && e.components["Collide"])
+			if (e && e.components.Collide)
 			{
-				if ( e.components["Collide"].Destroy)
+				if ( e.components.Collide.Destroy)
 				{
-					if ( e.components["Prefab"] )
+					if ( e.components.Prefab )
 					{
-						prefabs.Delete(e.components["Prefab"].Type, e.components["Prefab"].Position);
+						prefabs.Delete(e.components.Prefab.Type, e.components.Prefab.Position);
 					}
 					entities[layer].Delete(eIdx);
 				}
