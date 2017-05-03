@@ -74,7 +74,7 @@ var systems = {};
 var shipData = [["M",-20,-10],["L",20,0],["L",-20,10],["L",-20,-10] ];
 var enemyData = [["M",-10,-10],["L",10,-10],["L",10,10],["L",-10,10],["L",-10,-10] ];
 var explosionData = [["M",-1,-1],["L",1,-1],["L",1,1],["L",-1,1],["L",-1,-1] ];
-var playerShotData = [["M",-4,-1],["L",4,-1],["L",4,1],["L",-4,1],["L",-4,-1] ];
+var playerShotData = [["M",-6,-1],["L",6,-1],["L",6,1],["L",-6,1],["L",-6,-1] ];
 var radarBorderData = [["M", gameXMin / 10 - 2, -screenHeight / 10 / 2 - 3], 	
 	["L", gameXMin / 10-2, screenHeight/10/2 + 3],
 	["L", gameXMax / 10+2, screenHeight/10/2 + 3],
@@ -122,7 +122,7 @@ init = function()
 		}
 		
 		// create some random enemies
-		for ( var l = 0; l < 40; l++ )
+		for ( var l = 0; l < 400; l++ )
 		{
 			if (l % 2)
 			{
@@ -166,8 +166,8 @@ main = function ()
 	SysEnemies();
 	SysPhysics();
 	SysCamera();
-	SysRender();
 	SysCollisions();
+	SysRender();
 	SysDestroyer();
 }
 
@@ -196,10 +196,15 @@ Entity = function()
 // components have a name and can contain a block of data
 // For the moment all components are prefixed with Comp
 
-CompPosition = function (xpos, ypos, rotation)
+CompPosition = function (xpos, ypos)
 {
 	return {"Name" : "Position", 
-		"Position" : new Vector(xpos,ypos),
+		"Position" : new Vector(xpos,ypos)};
+}
+
+CompRotation = function (rotation)
+{
+	return {"Name" : "Rotation", 
 		"Rotation" : rotation};
 }
 
@@ -312,19 +317,21 @@ SysRender = function()
 			{
 				var pos = e.components["Position"].Position;
 				var data = e.components["Visible"].Drawdata;
-				var rotate = e.components["Position"].Rotation;
-
-				var rotated = [];
-				for ( var pIdx = 0; pIdx < data.length; pIdx++)
+				var rotated = data;
+				if ( e.components["Rotation"])
 				{
-					var p = data[pIdx];
-					newX = p[1] * Math.cos(rotate) - p[2] * Math.sin(rotate);
-					newY = p[1] * Math.sin(rotate) + p[2] * Math.cos(rotate);
+					var rotate = e.components["Rotation"].Rotation;
 
-					rotated[pIdx] = [p[0],newX, newY];
-					ctx.lineTo(scrX,scrY);
+					rotated = [];
+					for ( var pIdx = 0; pIdx < data.length; pIdx++)
+					{
+						var p = data[pIdx];
+						newX = p[1] * Math.cos(rotate) - p[2] * Math.sin(rotate);
+						newY = p[1] * Math.sin(rotate) + p[2] * Math.cos(rotate);
+
+						rotated[pIdx] = [p[0],newX, newY];
+					}
 				}
-
 				// Don't know if this is the place to do this but
 				// as we have now rotated and are about to draw
 				// we can recalculate the bounding box
@@ -405,16 +412,6 @@ SysRender = function()
 			}
 		}
 	}
-	// draw the HUD ( rader )
-//	ctx.beginPath();
-//	scrX = gameXMin / 10;
-//	scrY = -screenHeight/2;
-//	ctx.moveTo(scrX-2,scrY - 2);
-//	ctx.lineTo(scrX-2, scrY + screenHeight/10 + 4);
-//	ctx.lineTo(scrX + gameWidth/10 + 4, scrY + screenHeight/10 + 4);
-//	ctx.lineTo(scrX + gameWidth/10 + 4, scrY);
-//	ctx.strokeStyle="white";
-//	ctx.stroke();
 }
 
 SysCollisions = function()
@@ -627,20 +624,24 @@ SysEnemies = function()
 	for ( var eIdx=entities[LAYER_ENEMY].length-1; eIdx >= 0; eIdx--)
 	{
 		var e = entities[LAYER_ENEMY].data[eIdx];
-		if (e && e.components["EnemyA"] && e.components["Position"] && e.components["Physics"])
+		if (e && e.components["EnemyA"] && e.components["Physics"])
 		{
-			var pos = e.components["Position"].Position;
-			var rotation = e.components["Position"].Rotation;
-			rotation += Math.PI / 100;
-			e.components["Position"].Rotation = rotation;
+			if ( e.components["Rotation"] )
+			{
+				var rotation = e.components["Rotation"].Rotation;
+				rotation += Math.PI / 100;
+				e.components["Rotation"].Rotation = rotation;
+			}
 			CheckCollided(e);
 		}
-		if (e && e.components["EnemyB"] && e.components["Position"] && e.components["Physics"])
+		if (e && e.components["EnemyB"] && e.components["Physics"])
 		{
-			var pos = e.components["Position"].Position;
-			var rotation = e.components["Position"].Rotation;
-			rotation -= Math.PI / 100;
-			e.components["Position"].Rotation = rotation;
+			if ( e.components["Rotation"])
+			{
+				var rotation = e.components["Rotation"].Rotation;
+				rotation -= Math.PI / 100;
+				e.components["Rotation"].Rotation = rotation;
+			}
 			CheckCollided(e);
 		}
 	}
@@ -661,13 +662,6 @@ SysEnemies = function()
 	{
 		for ( var p = 0; p < 50; p++)
 		{
-//			var entity = Entity();
-//			var colour = colour;
-//			entity.AddComponent(CompPosition(pos.x,pos.y,0));
-//			entity.AddComponent(CompPhysics((Math.random()-.5)*2,(Math.random()-.5)*2,1,1));
-//			entity.AddComponent(CompLifeSpan(50 + Math.random()*50));
-//			entity.AddComponent(CompVisible(explosionData,colour,8));
-//			entities.Insert(entity);
 			prefabs.CreateParticle(pos.x,pos.y,(Math.random()-.5)*2,(Math.random()-.5)*2,colour);
 		}
 	}
@@ -681,7 +675,7 @@ SysPlayer = function()
 		if (e && e.components["Player"] && e.components["Position"] && e.components["Physics"])
 		{
 			var pos = e.components["Position"].Position;
-			var rotation = e.components["Position"].Rotation;
+			var rotation = e.components["Rotation"].Rotation;
 			var physics = e.components["Physics"];
 			var keys = e.components["Player"];
 
@@ -717,7 +711,7 @@ SysPlayer = function()
 				keys.ShotElapsedTime = 0;
 			}
 			
-			e.components["Position"].Rotation = rotation;
+			e.components["Rotation"].Rotation = rotation;
 		}
 	}
 
@@ -1077,6 +1071,7 @@ function PrefabManager()
 			entity.AddComponent(CompCamera());
 			entity.AddComponent(CompGamePos());
 			entity.AddComponent(CompRadar());
+			entity.AddComponent(CompRotation());
 		}
 		
 		ec = entity.components.Prefab;
@@ -1087,6 +1082,8 @@ function PrefabManager()
 		var ec = entity.components.Position;
 		ec.Position.x = 0;
 		ec.Position.y = 0;
+
+		var ec = entity.components.Rotation;
 		ec.Rotation = 0;
 
 		ec = entity.components.Physics
@@ -1180,6 +1177,7 @@ function PrefabManager()
 			entity.AddComponent(CompPrefab("EnemyA"));
 			entity.AddComponent(CompGamePos());
 			entity.AddComponent(CompRadar());
+			entity.AddComponent(CompRotation());
 		}
 
 		ec = entity.components.Prefab;
@@ -1189,7 +1187,10 @@ function PrefabManager()
 		var ec = entity.components.Position;
 		ec.Position.x = xpos;
 		ec.Position.y = ypos;
+		
+		var ec = entity.components.Rotation;
 		ec.Rotation = 0;
+
 
 		ec = entity.components.Physics
 		ec.Velocity.x = (Math.random()-.5)*4;
@@ -1268,6 +1269,7 @@ function PrefabManager()
 			entity.AddComponent(CompPlayerShot());
 			entity.AddComponent(CompPrefab("PlayerShot"));
 //			entity.AddComponent(CompGamePos());
+			entity.AddComponent(CompRotation());
 
 			console.log("Creating playershot");
 		}
@@ -1279,6 +1281,8 @@ function PrefabManager()
 		var ec = entity.components.Position;
 		ec.Position.x = xpos;
 		ec.Position.y = ypos;
+
+		var ec = entity.components.Rotation;
 		ec.Rotation = rotation;
 
 		ec = entity.components.Physics
