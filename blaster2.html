@@ -52,14 +52,14 @@ function doResize()
 	canvas.style.marginTop = (scrH-height)/2;
 }
 
-const screenWidth = 1280;
-const screenHeight = 768;
-const gameWidth = screenWidth * 2;
-const gameHeight = screenHeight;
-const gameXMax  =  gameWidth/2;
-const gameXMin  =  -gameXMax;
-const gameYMax  =  gameHeight/2;
-const gameYMin  =  -gameYMax;
+const SCREEN_WIDTH = 1280;
+const SCREEN_HEIGHT = 768;
+const GAME_WIDTH = SCREEN_WIDTH * 4;
+const GAME_HEIGHT = SCREEN_HEIGHT;
+const GAME_X_MAX  =  GAME_WIDTH/2;
+const GAME_X_MIN  =  -GAME_X_MAX;
+const GAME_Y_MAX  =  GAME_HEIGHT/2;
+const GAME_Y_MIN  =  -GAME_Y_MAX;
 
 const LAYER_PLAYER = 1;
 const LAYER_ENEMY = 2;
@@ -89,11 +89,11 @@ var enemyData = [["M",-10,-10],["L",10,-10],["L",10,10],["L",-10,10],["L",-10,-1
 var powerUpData = [["M",-5,-5],["L",5,5],["M",5,-5],["L",-5,5]];
 var explosionData = [["M",-1,-1],["L",1,-1],["L",1,1],["L",-1,1],["L",-1,-1] ];
 var playerShotData = [["M",-6,-1],["L",6,-1],["L",6,1],["L",-6,1],["L",-6,-1] ];
-var radarBorderData = [["M", gameXMin / 10 - 2, -screenHeight / 10 / 2 - 3], 	
-	["L", gameXMin / 10-2, screenHeight/10/2 + 3],
-	["L", gameXMax / 10+2, screenHeight/10/2 + 3],
-	["L", gameXMax / 10+2, -screenHeight/10/2 - 3],
-	["L", gameXMin / 10-2, -screenHeight/10/2 - 3]];
+var radarBorderData = [["M", GAME_X_MIN / 10-1, GAME_Y_MIN / 10 - 1], 	
+	["L", GAME_X_MIN / 10 - 1, GAME_Y_MAX/10 + 1],
+	["L", GAME_X_MAX / 10 + 1, GAME_Y_MAX/10 + 1],
+	["L", GAME_X_MAX / 10 + 1, GAME_Y_MIN/10 - 1],
+	["L", GAME_X_MIN / 10 - 1, GAME_Y_MIN/10 - 1]];
 
 var prefabs = PrefabManager();
 
@@ -110,8 +110,8 @@ init = function()
 	canvas = document.getElementById('myCanvas');
 	if (canvas.getContext)
 	{
-		canvas.width = screenWidth;
-		canvas.height = screenHeight;
+		canvas.width = SCREEN_WIDTH;
+		canvas.height = SCREEN_HEIGHT;
 
 		// when the window resizes we want to resize the canvas
 		window.onresize = function() { doResize(); };
@@ -125,7 +125,7 @@ init = function()
 		// set timer to game main function
 		ctx = canvas.getContext('2d');
 
-		ctx.translate(screenWidth/2, screenHeight/2);
+		ctx.translate(SCREEN_WIDTH/2, SCREEN_HEIGHT/2);
 		
 		entities = QuickCollection();
 		for ( var layer = 0; layer <= LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
@@ -135,8 +135,8 @@ init = function()
 		
 		prefabs.CreatePlayer(37,39,38,90);
 
-		prefabs.CreateSpawner(-screenWidth/2+50,0,10,"EnemyA");
-		prefabs.CreateSpawner(screenWidth/2-50,0,10, "EnemyB");
+		prefabs.CreateSpawner(-SCREEN_WIDTH/2+50,0,10,"EnemyA");
+		prefabs.CreateSpawner(SCREEN_WIDTH/2-50,0,10, "EnemyB");
 		
 		prefabs.CreateRadarHud();
 		
@@ -191,7 +191,7 @@ main = function ()
 	
 	// and finally do a render
 	ctx.globalAlpha = 0.75;
-	ctx.fillRect(-screenWidth/2, -screenHeight/2, screenWidth, screenHeight);
+	ctx.fillRect(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, SCREEN_WIDTH, SCREEN_HEIGHT);
 	ctx.globalAlpha = 1;
 
 	SysRender();
@@ -366,6 +366,22 @@ CompSpawner = function(xpos,ypos,spawnRate, prefabType)
 // For the moment all Systems are prefixed with Sys
 SysRender = function()
 {
+	// Find the radar hud entity if there is one
+	// Any entity in the HUD layer is considered a HUD
+	var radarEntity = null;
+	var hud_x_divider = 1;
+	var hud_y_divider = 1;
+	for ( var eIdx=entities[LAYER_HUD].length-1; eIdx >= 0; eIdx--)
+	{
+		var e = entities[LAYER_HUD].data[eIdx];
+		if ( e.components.Position && e.components.Visible )
+		{
+			radarEntity = e;
+			hud_x_divider = Math.floor(GAME_WIDTH / ( radarEntity.components.Visible.Bottomright.x - radarEntity.components.Visible.Topleft.x - 4));
+			hud_y_divider = Math.floor(GAME_HEIGHT / ( radarEntity.components.Visible.Bottomright.y - radarEntity.components.Visible.Topleft.y - 4));
+		}
+	}
+
 	for ( var layer = 0; layer <= LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
 	{
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
@@ -418,7 +434,7 @@ SysRender = function()
 				bottomright.y -= 2;
 
 				// now draw the shape
-				if ( pos.x + bottomright.x > -screenWidth/2 || pos.x + topleft.x < screenWidth/2)
+				if ( pos.x + bottomright.x > -SCREEN_WIDTH/2 || pos.x + topleft.x < SCREEN_WIDTH/2)
 				{
 					ctx.beginPath();
 					
@@ -445,9 +461,14 @@ SysRender = function()
 				// and draw the radar version
 				if ( e.components.Radar )
 				{
+					// convert the game position into a position 
+					// that fits within the HUD
+					var hud_x_divider = (GAME_WIDTH / ( radarEntity.components.Visible.Bottomright.x - radarEntity.components.Visible.Topleft.x - 3));
+					var hud_y_divider = (GAME_HEIGHT / ( radarEntity.components.Visible.Bottomright.y - radarEntity.components.Visible.Topleft.y - 3));
+					
 					ctx.beginPath();
-					scrX = pos.x / 10;
-					scrY = pos.y / 10 - screenHeight/2 + gameHeight/10/2;
+					scrX = pos.x / hud_x_divider + radarEntity.components.Position.Position.x;
+					scrY = pos.y / hud_y_divider + radarEntity.components.Position.Position.y;
 					ctx.moveTo(scrX-2,scrY-2);
 					ctx.lineTo(scrX+2,scrY-2);
 					ctx.lineTo(scrX+2,scrY+2);
@@ -623,55 +644,55 @@ SysPhysics = function()
 	
 	function HandleScreenWrap(pos)
 	{
-		if ( pos.x <= gameXMin )
-			pos.x += gameWidth;
+		if ( pos.x <= GAME_X_MIN )
+			pos.x += GAME_WIDTH;
 
-		if ( pos.x >= gameXMax-1 )
-			pos.x -= gameWidth;
+		if ( pos.x >= GAME_X_MAX-1 )
+			pos.x -= GAME_WIDTH;
 
-		if ( pos.y <= gameYMin )
-			pos.y += gameHeight;
+		if ( pos.y <= GAME_Y_MIN )
+			pos.y += GAME_HEIGHT;
 
-		if ( pos.y >= gameYMax-1 )
-			pos.y -= gameHeight;
+		if ( pos.y >= GAME_Y_MAX-1 )
+			pos.y -= GAME_HEIGHT;
 	}
 	
 	function HandleScreenBounce(pos, vel)
 	{
-		if ( pos.x <= gameXMin ) 
+		if ( pos.x <= GAME_X_MIN ) 
 		{
 			if ( vel.x < 0 )
 			{
 				vel.x = -vel.x;
 			}
-			pos.x = gameXMin;
+			pos.x = GAME_X_MIN;
 		}
 
-		if ( pos.x >= gameXMax-1 ) 
+		if ( pos.x >= GAME_X_MAX-1 ) 
 		{
 			if ( vel.x > 0  )
 			{
 				vel.x = -vel.x;
 			}
-			pos.x = gameXMax-1;
+			pos.x = GAME_X_MAX-1;
 		}
 
-		if ( pos.y <= gameYMin ) 
+		if ( pos.y <= GAME_Y_MIN ) 
 		{
 			if ( vel.y < 0 )
 			{
 				vel.y = -vel.y;
 			}
-			pos.y = gameYMin;
+			pos.y = GAME_Y_MIN;
 		}
 
-		if ( pos.y >= gameYMax-1 ) 
+		if ( pos.y >= GAME_Y_MAX-1 ) 
 		{
 			if ( vel.y > 0)
 			{
 				vel.y = -vel.y;
 			}
-			pos.y = gameYMax-1;
+			pos.y = GAME_Y_MAX-1;
 		}
 	}
 }
@@ -1550,8 +1571,7 @@ function PrefabManager()
 
 		var ec = entity.components.Position;
 		ec.Position.x = 0;
-		ec.Position.y = -screenHeight/2 + gameHeight/10/2 + 2;
-
+		ec.Position.y = -SCREEN_HEIGHT/2 + GAME_HEIGHT/20 + 2;
 		ec = entity.components.Visible;
 		ec.Drawdata = radarBorderData;
 		ec.Colour = "White";
