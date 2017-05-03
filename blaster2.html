@@ -61,8 +61,8 @@ var rotate = 0;
 
 var screenWidth = 1280;
 var screenHeight = 768;
-var gameWidth = 1280 * 4;
-var gameHeight = 768;
+var gameWidth = screenWidth * 4;
+var gameHeight = screenHeight;
 var gameXMax  =  gameWidth/2;
 var gameXMin  =  -gameXMax;
 var gameYMax  =  gameHeight/2;
@@ -75,12 +75,18 @@ var shipData = [["M",-20,-10],["L",20,0],["L",-20,10],["L",-20,-10] ];
 var enemyData = [["M",-10,-10],["L",10,-10],["L",10,10],["L",-10,10],["L",-10,-10] ];
 var explosionData = [["M",-1,-1],["L",1,-1],["L",1,1],["L",-1,1],["L",-1,-1] ];
 var playerShotData = [["M",-4,-1],["L",4,-1],["L",4,1],["L",-4,1],["L",-4,-1] ];
+var radarBorderData = [["M", gameXMin / 10 - 2, -screenHeight / 10 / 2 - 3], 	
+	["L", gameXMin / 10-2, screenHeight/10/2 + 3],
+	["L", gameXMax / 10+2, screenHeight/10/2 + 3],
+	["L", gameXMax / 10+2, -screenHeight/10/2 - 3],
+	["L", gameXMin / 10-2, -screenHeight/10/2 - 3]];
 
 var LAYER_PLAYER = 1;
 var LAYER_ENEMY = 2;
 var LAYER_PLAYER_SHOT = 4;
 var LAYER_ENEMY_SHOT = 8;
-var LAYER_LAST_LAYER = 8;
+var LAYER_HUD = 16;
+var LAYER_LAST_LAYER = 16;
 
 var prefabs = PrefabManager();
 
@@ -110,11 +116,10 @@ init = function()
 		ctx.translate(screenWidth/2, screenHeight/2);
 		
 		entities = QuickCollection();
-		entities[0] = QuickCollection();
-		entities[1] = QuickCollection();
-		entities[2] = QuickCollection();
-		entities[4] = QuickCollection();
-		entities[8] = QuickCollection();
+		for ( var layer = 0; layer <= LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+		{
+			entities[layer] = QuickCollection();
+		}
 		
 		// create some random enemies
 		for ( var l = 0; l < 40; l++ )
@@ -131,6 +136,8 @@ init = function()
 
 		prefabs.CreatePlayer(37,39,38,90);
 
+		prefabs.CreateRadarHud();
+		
 		timerId = setInterval ( main, Math.floor(1000/50));
 	}
 }
@@ -273,6 +280,16 @@ CompCamera = function ()
 	return {"Name" : "Camera"};
 }
 
+CompGamePos = function ()
+{
+	return {"Name" : "Gamepos"};
+}
+
+CompRadar = function ()
+{
+	return {"Name" : "Radar"};
+}
+
 CompCollide = function (collisionLayers)
 {
 	return {"Name" : "Collide",
@@ -286,7 +303,7 @@ CompCollide = function (collisionLayers)
 // For the moment all Systems are prefixed with Sys
 SysRender = function()
 {
-	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	for ( var layer = 0; layer <= LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
 	{
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
@@ -359,11 +376,11 @@ SysRender = function()
 				ctx.stroke();
 				
 				// and draw the radar version
-				if ( e.components["Player"] != null | e.components["EnemyA"] != null || e.components["EnemyB"] != null)
+				if ( e.components["Radar"] )
 				{
 					ctx.beginPath();
 					scrX = pos.x / 10;
-					scrY = pos.y / 10 - screenHeight/2 + 40;
+					scrY = pos.y / 10 - screenHeight/2 + gameHeight/10/2;
 					ctx.moveTo(scrX-2,scrY-2);
 					ctx.lineTo(scrX+2,scrY-2);
 					ctx.lineTo(scrX+2,scrY+2);
@@ -389,20 +406,20 @@ SysRender = function()
 		}
 	}
 	// draw the HUD ( rader )
-	ctx.beginPath();
-	scrX = gameXMin / 10;
-	scrY = -screenHeight/2;
-	ctx.moveTo(scrX-2,scrY - 2);
-	ctx.lineTo(scrX-2, scrY + screenHeight/10 + 4);
-	ctx.lineTo(scrX + gameWidth/10 + 4, scrY + screenHeight/10 + 4);
-	ctx.lineTo(scrX + gameWidth/10 + 4, scrY);
-	ctx.strokeStyle="white";
-	ctx.stroke();
+//	ctx.beginPath();
+//	scrX = gameXMin / 10;
+//	scrY = -screenHeight/2;
+//	ctx.moveTo(scrX-2,scrY - 2);
+//	ctx.lineTo(scrX-2, scrY + screenHeight/10 + 4);
+//	ctx.lineTo(scrX + gameWidth/10 + 4, scrY + screenHeight/10 + 4);
+//	ctx.lineTo(scrX + gameWidth/10 + 4, scrY);
+//	ctx.strokeStyle="white";
+//	ctx.stroke();
 }
 
 SysCollisions = function()
 {
-	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	for ( var layer = 0; layer <= LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
 	{
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
@@ -460,7 +477,7 @@ SysCamera = function()
 	var cameraPosX;
 	var cameraPosY;
 	// find first camera entity with a position
-	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	for ( var layer = 0; layer <= LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
 	{
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
@@ -476,12 +493,12 @@ SysCamera = function()
 	if ( cameraPosX == null)
 		return;
 		
-	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	for ( var layer = 0; layer <= LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
 	{
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
 			var e = entities[layer].data[eIdx];
-			if (e && e.components["Position"])
+			if (e && e.components["Position"] &&  e.components["Gamepos"])
 			{
 				var pos = e.components["Position"].Position;
 				
@@ -497,7 +514,7 @@ SysPhysics = function()
 	var cameraPosX = 0;
 	var cameraPosY = 0;
 	// find first camera entity with a position
-	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	for ( var layer = 0; layer <= LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
 	{
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
@@ -510,7 +527,7 @@ SysPhysics = function()
 		}
 	}
 	
-	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	for ( var layer = 0; layer <= LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
 	{
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
@@ -687,8 +704,7 @@ SysPlayer = function()
 				// Add the vector to the current acceleration vector
 				physics.Velocity = physics.Velocity.Add(accel);
 
-				prefabs.CreateParticle(pos.x - xp*20,pos.y - yp*20,(Math.random()-.5)-Math.random()*xp*4,(Math.random()-.5)-Math.random()*yp*4,"White");
-
+				prefabs.CreateParticle(pos.x - xp*20,pos.y - yp*20,-Math.random()*xp*4,-Math.random()*yp*4,"White");
 			}
 
 			keys.ShotElapsedTime++;
@@ -728,7 +744,7 @@ SysPlayer = function()
 
 SysDestroyer = function()
 {
-	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	for ( var layer = 0; layer <= LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
 	{
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
@@ -1042,6 +1058,7 @@ function PrefabManager()
 	var playerShots = QuickCollection();
 	var EnemyA = QuickCollection();
 	var EnemyB = QuickCollection();
+	var RadarHud = QuickCollection();
 
 	obj.CreatePlayer = function (keyleft, keyright, keyaccelerate, keyshoot)
 	{
@@ -1058,6 +1075,8 @@ function PrefabManager()
 			entity.AddComponent(CompCollide());
 			entity.AddComponent(CompPrefab("Player"));
 			entity.AddComponent(CompCamera());
+			entity.AddComponent(CompGamePos());
+			entity.AddComponent(CompRadar());
 		}
 		
 		ec = entity.components.Prefab;
@@ -1107,6 +1126,7 @@ function PrefabManager()
 			entity.AddComponent(CompVisible());
 			entity.AddComponent(CompVisible(explosionData,colour,LAYER_ENEMY));
 			entity.AddComponent(CompPrefab("Particle"));
+			entity.AddComponent(CompGamePos());
 			
 			console.log("Creating particle");
 		}
@@ -1158,6 +1178,8 @@ function PrefabManager()
 			entity.AddComponent(CompCollide(LAYER_PLAYER | LAYER_PLAYER_SHOT));
 			entity.AddComponent(CompVisible(enemyData,colour,LAYER_ENEMY));
 			entity.AddComponent(CompPrefab("EnemyA"));
+			entity.AddComponent(CompGamePos());
+			entity.AddComponent(CompRadar());
 		}
 
 		ec = entity.components.Prefab;
@@ -1175,7 +1197,7 @@ function PrefabManager()
 		ec.Acceleration = 1;
 		ec.Drag = 1;
 
-		ec = entity.components.Visible;
+//		ec = entity.components.Visible;
 //		ec.Drawdata = enemyData;
 //		ec.Colour = "Yellow";
 //		ec.Layer = LAYER_ENEMY;
@@ -1203,10 +1225,11 @@ function PrefabManager()
 			entity.AddComponent(CompCollide(LAYER_PLAYER | LAYER_PLAYER_SHOT));
 			entity.AddComponent(CompVisible(enemyData,colour,LAYER_ENEMY));
 			entity.AddComponent(CompPrefab("EnemyB"));
+			entity.AddComponent(CompRadar());
 		}
 
 		ec = entity.components.Prefab;
-		ec.Type = "EnemyB";
+//		ec.Type = "EnemyB";
 		ec.Position = EnemyA.length;
 		
 		var ec = entity.components.Position;
@@ -1217,10 +1240,10 @@ function PrefabManager()
 		ec = entity.components.Physics
 		ec.Velocity.x = (Math.random()-.5)*4;
 		ec.Velocity.y = (Math.random()-.5)*4;
-		ec.Acceleration = .1;
+		ec.Acceleration = 1;
 		ec.Drag = 1;
 
-		ec = entity.components.Visible;
+//		ec = entity.components.Visible;
 //		ec.Drawdata = enemyData;
 //		ec.Colour = "Green";
 //		ec.Layer = LAYER_ENEMY;
@@ -1279,6 +1302,33 @@ function PrefabManager()
 		playerShots.Insert(entity);
 		entities[LAYER_PLAYER_SHOT].Insert(entity);
 		
+		return entity;
+	}
+	
+	obj.CreateRadarHud = function()
+	{
+		var entity = playerShots.Reclaim();
+		if ( entity == null )
+		{
+			var entity = Entity();
+			entity.AddComponent(CompPosition());
+			entity.AddComponent(CompVisible());
+			entity.AddComponent(CompPrefab("RadarHud"));
+		}
+
+		var ec = entity.components.Position;
+		ec.Position.x = 0;
+		ec.Position.y = -screenHeight/2 + gameHeight/10/2 + 2;
+		ec.Rotation = 0;
+
+		ec = entity.components.Visible;
+		ec.Drawdata = radarBorderData;
+		ec.Colour = "White";
+		ec.Layer = LAYER_HUD;
+
+		RadarHud.Insert(entity);
+		entities[LAYER_HUD].Insert(entity);
+
 		return entity;
 	}
 	
