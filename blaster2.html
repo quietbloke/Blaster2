@@ -190,7 +190,8 @@ CompPosition = function (xpos, ypos)
 CompRotation = function (rotation)
 {
 	return {"Name" : "Rotation", 
-		"Rotation" : rotation};
+		"Rotation" : rotation,
+		"Rotatespeed" : 0};
 }
 
 CompVisible = function (drawData,colour,layer)
@@ -213,7 +214,7 @@ CompPhysics = function (xvel, yvel, acceleration, drag, rotatespeed, maxvelocity
 		"Velocity" : new Vector(xvel,yvel), 
 		"Acceleration" : acceleration, 
 		"Drag" : drag,
-		"Rotatespeed" : rotatespeed,
+///		"Rotatespeed" : rotatespeed,
 		"Maxvelocity" : maxvelocity};
 }
 
@@ -225,7 +226,8 @@ CompPlayer = function ( leftkey, rightkey, acceleratekey, shootkey)
 		"KeyAccelerate" : acceleratekey,
 		"KeyShoot" : shootkey,
 		"ShotRate" : 10,
-		"ShotElapsedTime" : 0};
+		"ShotElapsedTime" : 0,
+		"Rotaterate" : Math.PI/40 };
 }
 
 CompLifeSpan = function ( maxAge )
@@ -533,6 +535,14 @@ SysPhysics = function()
 				var physics = e.components["Physics"];
 				var vel = e.components["Physics"].Velocity;
 				
+				if ( e.components["Rotation"] )
+				{
+					var rotation = e.components["Rotation"].Rotation;
+					rotation += e.components["Rotation"].Rotatespeed;
+					e.components["Rotation"].Rotation = rotation;
+				}
+
+				
 				pos.x = pos.x + vel.x;
 				pos.y = pos.y + vel.y;
 				
@@ -624,12 +634,12 @@ SysEnemies = function()
 		var e = entities[LAYER_ENEMY].data[eIdx];
 		if (e && e.components["EnemyA"] && e.components["Physics"])
 		{
-			if ( e.components["Rotation"] )
-			{
-				var rotation = e.components["Rotation"].Rotation;
-				rotation += Math.PI / 100;
-				e.components["Rotation"].Rotation = rotation;
-			}
+//			if ( e.components["Rotation"] )
+//			{
+//				var rotation = e.components["Rotation"].Rotation;
+//				rotation += Math.PI / 100;
+//				e.components["Rotation"].Rotation = rotation;
+//			}
 			CheckCollided(e);
 		}
 		if (e && e.components["EnemyB"] && e.components["Physics"])
@@ -646,7 +656,7 @@ SysEnemies = function()
 		{
 			var spawner = e.components["Spawner"];
 			spawner.ElapsedTime++;
-			if ( prefabs.Count(spawner.SpawnPrefabType) < 5)
+			if ( prefabs.Count(spawner.SpawnPrefabType) < 50)
 			{
 				if ( spawner.ElapsedTime > spawner.SpawnRate)
 				{
@@ -781,20 +791,20 @@ SysPlayer = function()
 				var pos = e.components["Position"].Position;
 				var rotation = e.components["Rotation"].Rotation;
 				var physics = e.components["Physics"];
-				var keys = e.components["Player"];
+				var player = e.components["Player"];
 
 				CallectPowerUps(e.components["Collide"]);
 				
-				if (keystate[keys.KeyRight])
+				if (keystate[player.KeyRight])
 				{
-					rotation += physics.Rotatespeed;
+					rotation += player.Rotaterate; //physics.Rotatespeed;
 				}
-				if (keystate[keys.KeyLeft])
+				if (keystate[player.KeyLeft])
 				{
-					rotation -= physics.Rotatespeed;
+					rotation -= player.Rotaterate; //physics.Rotatespeed;
 				}
 
-				if (keystate[keys.KeyAccelerate])
+				if (keystate[player.KeyAccelerate])
 				{
 					// covert the rotation angle to a vector
 					var accel = Vector ( Math.cos(rotation), Math.sin(rotation));
@@ -807,14 +817,14 @@ SysPlayer = function()
 					prefabs.CreateParticle(pos.x - xp*20,pos.y - yp*20,-Math.random()*xp*4,-Math.random()*yp*4,"White");
 				}
 
-				keys.ShotElapsedTime++;
-				if ( keystate[keys.KeyShoot] && keys.ShotElapsedTime >= keys.ShotRate)
+				player.ShotElapsedTime++;
+				if ( keystate[player.KeyShoot] && player.ShotElapsedTime >= player.ShotRate)
 				{
 					var direction = Vector ( Math.cos(rotation), Math.sin(rotation));
 					var shotpos = Vector(pos.x + direction.x * 10, pos.y + direction.y * 10);
 					direction.SetMagnitude(12);
 					CreateShot(shotpos, direction, rotation);
-					keys.ShotElapsedTime = 0;
+					player.ShotElapsedTime = 0;
 				}
 				
 				e.components["Rotation"].Rotation = rotation;
@@ -1210,7 +1220,7 @@ function PrefabManager()
 		ec.Velocity.y = 0;
 		ec.Acceleration = .1;
 		ec.Drag = .99;
-		ec.Rotatespeed = Math.PI/50;
+//		ec.Rotatespeed = Math.PI/50;
 		ec.Maxvelocity = 8;
 
 		ec = entity.components.Visible;
@@ -1308,9 +1318,8 @@ function PrefabManager()
 
 		var ec = entity.components.Rotation;
 		ec.Rotation = 0;
+		ec.Rotatespeed = Math.PI/25;
 		
-		var ec = entity.components.Rotation;
-
 		ec = entity.components.Collide
 		ec.Collided = false;
 		ec.Destroy = false;
@@ -1334,7 +1343,7 @@ function PrefabManager()
 
 	obj.CreateEnemyB = function ( xpos, ypos)
 	{
-		var entity = EnemyA.Reclaim();
+		var entity = EnemyB.Reclaim();
 		if ( entity == null )
 		{
 			var entity = Entity();
@@ -1452,6 +1461,7 @@ function PrefabManager()
 			entity.AddComponent(CompPowerUp());
 			entity.AddComponent(CompPrefab("PowerUp"));
 			entity.AddComponent(CompGamePos());
+			entity.AddComponent(CompRotation());
 		}
 
 		ec = entity.components.Prefab;
@@ -1461,14 +1471,19 @@ function PrefabManager()
 		ec.Position.x = xpos;
 		ec.Position.y = ypos;
 
+		var ec = entity.components.Rotation;
+		ec.Rotation = 0;
+		ec.Rotatespeed = -Math.PI / 50;
+
 		ec = entity.components.Physics
 		ec.Velocity.x = xvel;
 		ec.Velocity.y = yvel;
 		ec.Acceleration = 0;
 		ec.Drag = .7;
 
+
 		var ec = entity.components.Lifespan;
-		ec.MaxAge = 50000;
+		ec.MaxAge = 600;
 		ec.Age = 0;
 
 		ec = entity.components.Collide
