@@ -1124,7 +1124,7 @@ function PrefabManager()
 			entity.AddComponent(CompPhysics());
 			entity.AddComponent(CompLifeSpan());
 			entity.AddComponent(CompVisible());
-			entity.AddComponent(CompVisible(explosionData,colour,LAYER_ENEMY));
+			entity.AddComponent(CompVisible(explosionData,colour,0));
 			entity.AddComponent(CompPrefab("Particle"));
 			entity.AddComponent(CompGamePos());
 			
@@ -1147,9 +1147,9 @@ function PrefabManager()
 		ec.Drag = 1;
 
 		ec = entity.components.Visible;
-		ec.Drawdata = explosionData;
+//		ec.Drawdata = explosionData;
 		ec.Colour = colour;
-		ec.Layer = 0;
+//		ec.Layer = 0;
 
 		ec = entity.components.Lifespan;
 		ec.MaxAge = 50 + Math.floor(Math.random() * 20);
@@ -1263,10 +1263,11 @@ function PrefabManager()
 			entity.AddComponent(CompPosition());
 			entity.AddComponent(CompPhysics());
 			entity.AddComponent(CompLifeSpan());
-			entity.AddComponent(CompVisible());
+			entity.AddComponent(CompVisible(playerShotData,"White",LAYER_PLAYER_SHOT));
 			entity.AddComponent(CompCollide());
 			entity.AddComponent(CompPlayerShot());
 			entity.AddComponent(CompPrefab("PlayerShot"));
+//			entity.AddComponent(CompGamePos());
 
 			console.log("Creating playershot");
 		}
@@ -1290,10 +1291,10 @@ function PrefabManager()
 		ec.MaxAge = 50;
 		ec.Age = 0;
 
-		ec = entity.components.Visible;
-		ec.Drawdata = playerShotData;
-		ec.Colour = "White";
-		ec.Layer = LAYER_PLAYER_SHOT;
+//		ec = entity.components.Visible;
+//		ec.Drawdata = playerShotData;
+//		ec.Colour = "White";
+//		ec.Layer = LAYER_PLAYER_SHOT;
 
 		ec = entity.components.Collide
 		ec.Collided = false;
@@ -1377,6 +1378,17 @@ function PrefabManager()
 				EnemyB.data[EnemyB.length-1].components.Prefab.Position = position;
 			}
 			EnemyB.Delete(position);
+		}
+		if ( type == "RadarHud")
+		{
+			// Bit of a Hack
+			// we need to repoint the last entity prefab entry to contain the position
+			// of the one we are deleting ( as that is where it will end up after the delete )
+			if ( RadarHud.length > 1)
+			{
+				RadarHud.data[RadarHud.length-1].components.Prefab.Position = position;
+			}
+			RadarHud.Delete(position);
 		}
 	}
 	
