@@ -66,6 +66,7 @@ var systems = {};
 
 var shipData = [["M",-20,-10],["L",20,0],["L",-20,10],["L",-20,-10] ];
 var enemyData = [["M",-10,-10],["L",10,-10],["L",10,10],["L",-10,10],["L",-10,-10] ];
+var powerUpData = [["M",-5,-5],["L",5,5],["M",5,-5],["L",-5,5]];
 var explosionData = [["M",-1,-1],["L",1,-1],["L",1,1],["L",-1,1],["L",-1,-1] ];
 var playerShotData = [["M",-6,-1],["L",6,-1],["L",6,1],["L",-6,1],["L",-6,-1] ];
 var radarBorderData = [["M", gameXMin / 10 - 2, -screenHeight / 10 / 2 - 3], 	
@@ -76,10 +77,11 @@ var radarBorderData = [["M", gameXMin / 10 - 2, -screenHeight / 10 / 2 - 3],
 
 var LAYER_PLAYER = 1;
 var LAYER_ENEMY = 2;
-var LAYER_PLAYER_SHOT = 4;
-var LAYER_ENEMY_SHOT = 8;
-var LAYER_HUD = 16;
-var LAYER_LAST_LAYER = 16;
+var LAYER_POWER_UP = 4;
+var LAYER_PLAYER_SHOT = 8;
+var LAYER_ENEMY_SHOT = 16;
+var LAYER_HUD = 32;
+var LAYER_LAST_LAYER = 32;
 
 var prefabs = PrefabManager();
 
@@ -114,23 +116,10 @@ init = function()
 			entities[layer] = QuickCollection();
 		}
 		
-		// create some random enemies
-//		for ( var l = 0; l < 50; l++ )
-//		{
-//			if (l % 2)
-//			{
-//				prefabs.CreateEnemyA((Math.random()-0.5) * 2 *(gameXMax-100),(Math.random()-0.5) * 2 * (gameYMax-100));
-//			}
-//			else
-//			{
-//				prefabs.CreateEnemyB((Math.random()-0.5)* 2 *(gameXMax-100),(Math.random()-0.5) * 2 * (gameYMax-100));
-//			}
-//		}
-
 		prefabs.CreatePlayer(37,39,38,90);
 
-		prefabs.CreateSpawner(-screenWidth/2+50,0,40);
-		prefabs.CreateSpawner(screenWidth/2-50,0,60);
+		prefabs.CreateSpawner(-screenWidth/2+50,0,40,"EnemyA");
+		prefabs.CreateSpawner(screenWidth/2-50,0,60, "EnemyB");
 		
 		prefabs.CreateRadarHud();
 		
@@ -158,13 +147,13 @@ main = function ()
 	ctx.fillRect(-screenWidth/2, -screenHeight/2, screenWidth, screenHeight);
 	ctx.globalAlpha = 1;
 
+	SysCollisions();
+	SysPhysics();
 	SysPlayer();
 	SysEnemies();
-	SysPhysics();
 	SysCamera();
-	SysCollisions();
-	SysRender();
 	SysDestroyer();
+	SysRender();
 }
 
 var nextId = 0;
@@ -266,6 +255,11 @@ CompEnemyB = function ()
 	return {"Name" : "EnemyB" };
 }
 
+CompPowerUp = function ()
+{
+	return {"Name" : "PowerUp" };
+}
+
 CompPrefab = function (type, pos)
 {
 	return {"Name" : "Prefab", "Type" : type, "Position" : pos };
@@ -299,10 +293,11 @@ CompCollide = function (collisionLayers)
 		"Destroy" : false};
 }
 
-CompSpawner = function(xpos,ypos,spawnRate)
+CompSpawner = function(xpos,ypos,spawnRate, prefabType)
 {
 	return {"Name" : "Spawner",
 		"SpawnRate" : spawnRate, 
+		"SpawnPrefab" : prefabType,
 		"ElapsedTime" : 0};
 }
 
@@ -430,7 +425,7 @@ SysCollisions = function()
 				var bottomright = e.components["Visible"].Bottomright;
 				var pos = e.components["Position"].Position;
 
-				for ( var layer2 = 0; layer2 < LAYER_LAST_LAYER; layer2 == 0 ? layer2 = 1 : layer2 = layer2 << 1)
+				for ( var layer2 = 0; layer2 <= LAYER_LAST_LAYER; layer2 == 0 ? layer2 = 1 : layer2 = layer2 << 1)
 				{
 					for ( var eIdx2=entities[layer2].length-1; eIdx2 >= 0; eIdx2--)
 					{
@@ -651,21 +646,92 @@ SysEnemies = function()
 		{
 			var spawner = e.components["Spawner"];
 			spawner.ElapsedTime++;
-			if ( spawner.ElapsedTime > spawner.SpawnRate)
+			if ( prefabs.Count(spawner.SpawnPrefabType) < 5)
 			{
-				var xpos = 0;
-				var ypos = 0;
-				if (e.components["Position"])
+				if ( spawner.ElapsedTime > spawner.SpawnRate)
 				{
-					xpos = e.components["Position"].Position.x;
-					ypos = e.components["Position"].Position.y;
+					var xpos = 0;
+					var ypos = 0;
+					if (e.components["Position"])
+					{
+						xpos = e.components["Position"].Position.x;
+						ypos = e.components["Position"].Position.y;
+					}
+					spawner.ElapsedTime = 0;
+					if ( spawner.SpawnPrefabType == "EnemyA")
+						prefabs.CreateEnemyA(xpos,ypos);
+					if ( spawner.SpawnPrefabType == "EnemyB")
+						prefabs.CreateEnemyB(xpos,ypos);
 				}
-				spawner.ElapsedTime = 0;
-				prefabs.CreateEnemyA(xpos,ypos);
 			}
 		}
 	}
+	// find the player
+	var playerEntity = null;
+	for ( var eIdx=0; eIdx < entities[LAYER_PLAYER].length; eIdx++)
+	{
+		var e = entities[LAYER_PLAYER].data[eIdx];
+		if (e && e.components["Player"] && e.components["Position"] && e.components["Physics"])
+		{
+			playerEntity = e;
+			break;
+		}
+	}
 	
+	// drift the powerup towards the player
+	for ( var eIdx=entities[LAYER_POWER_UP].length-1; eIdx >= 0; eIdx--)
+	{
+		var e = entities[LAYER_POWER_UP].data[eIdx];
+		if ( e.components["PowerUp"] && e.components["Physics"] )
+		{
+			// very basic just move towards player slowly
+			if ( e.components["Physics"] && playerEntity && playerEntity.components["Position"] )
+			{
+				var physics = e.components["Physics"];
+				var vel = e.components["Physics"].Velocity;
+//				vel.x = 0;
+//				vel.y = 0;
+				
+				var playerPos = playerEntity.components["Position"].Position;
+				var enemyPos = e.components["Position"].Position;
+				
+				var xlen = playerPos.x - enemyPos.x;
+				var ylen = playerPos.y - enemyPos.y;
+				var vec = Vector(xlen,ylen);
+				
+				var distance = vec.Magnitude();
+				
+				if ( distance < 300)
+				{
+					var accel = (300-distance) / 150;
+					accel *= accel;
+					vec.SetMagnitude(accel);
+
+					vel.x += vec.x;
+					vel.y += vec.y;
+//					vel.Add(vec);
+				}
+				
+//				if ( playerPos.x < enemyPos.x )
+//					vel.x = -.5;
+//				if ( playerPos.x > enemyPos.x )
+//					vel.x = .5;
+//				if ( playerPos.y < enemyPos.y )
+//					vel.y = -.5;
+//				if ( playerPos.y > enemyPos.y )
+//					vel.y = .5;
+			}
+		}
+
+		if (e && e.components["PowerUp"] && e.components["Collide"] && e.components["Collide"].Destroy == false)
+		{
+			if ( e.components["Collide"].Collided)
+			{
+				e.components["Collide"].Destroy = true;
+			}
+		}
+	}
+
 	function CheckCollided ( e)
 	{
 		if ( e.components["Collide"])
@@ -674,6 +740,7 @@ SysEnemies = function()
 			{
 				e.components["Collide"].Destroy = true;
 				CreateExplosion(e.components["Position"].Position, e.components["Visible"].Colour);
+				prefabs.CreatePowerUp(e.components["Position"].Position.x,e.components["Position"].Position.y,0,0);
 			}
 		}
 	}
@@ -689,65 +756,88 @@ SysEnemies = function()
 
 SysPlayer = function()
 {
-	for ( var eIdx=0; eIdx < entities[LAYER_PLAYER].length; eIdx++)
+	function CallectPowerUps(component)
 	{
-		var e = entities[LAYER_PLAYER].data[eIdx];
-		if (e && e.components["Player"] && e.components["Position"] && e.components["Physics"])
+		if ( component)
 		{
-			var pos = e.components["Position"].Position;
-			var rotation = e.components["Rotation"].Rotation;
-			var physics = e.components["Physics"];
-			var keys = e.components["Player"];
-
-			if (keystate[keys.KeyRight])
+			if ( component.Collided)
 			{
-				rotation += physics.Rotatespeed;
+				console.log("powerup");
+				component.Collided = false;
 			}
-			if (keystate[keys.KeyLeft])
-			{
-				rotation -= physics.Rotatespeed;
-			}
-
-			if (keystate[keys.KeyAccelerate])
-			{
-				// covert the rotation angle to a vector
-				var accel = Vector ( Math.cos(rotation), Math.sin(rotation));
-				var xp = accel.x;
-				var yp = accel.y;
-				accel.SetMagnitude(physics.Acceleration);
-				// Add the vector to the current acceleration vector
-				physics.Velocity = physics.Velocity.Add(accel);
-
-				prefabs.CreateParticle(pos.x - xp*20,pos.y - yp*20,-Math.random()*xp*4,-Math.random()*yp*4,"White");
-			}
-
-			keys.ShotElapsedTime++;
-			if ( keystate[keys.KeyShoot] && keys.ShotElapsedTime >= keys.ShotRate)
-			{
-				var direction = Vector ( Math.cos(rotation), Math.sin(rotation));
-				var shotpos = Vector(pos.x + direction.x * 10, pos.y + direction.y * 10);
-				direction.SetMagnitude(12);
-				CreateShot(shotpos, direction, rotation);
-				keys.ShotElapsedTime = 0;
-			}
-			
-			e.components["Rotation"].Rotation = rotation;
 		}
 	}
 
-	for ( var eIdx=entities[LAYER_PLAYER_SHOT].length-1; eIdx >= 0; eIdx--)
+	ProcessPlayers();
+	ProcessShots();
+	
+	function ProcessPlayers()
 	{
-		var e = entities[LAYER_PLAYER_SHOT].data[eIdx];
-		if (e && e.components["PlayerShot"] && e.components["Position"] && e.components["Physics"])
+		for ( var eIdx=0; eIdx < entities[LAYER_PLAYER].length; eIdx++)
 		{
-			if ( e.components["Collide"])
+			var e = entities[LAYER_PLAYER].data[eIdx];
+			if (e && e.components["Player"] && e.components["Position"] && e.components["Physics"])
 			{
-				if ( e.components["Collide"].Collided)
+				var pos = e.components["Position"].Position;
+				var rotation = e.components["Rotation"].Rotation;
+				var physics = e.components["Physics"];
+				var keys = e.components["Player"];
+
+				CallectPowerUps(e.components["Collide"]);
+				
+				if (keystate[keys.KeyRight])
 				{
-					e.components["Collide"].Destroy = true;
+					rotation += physics.Rotatespeed;
 				}
+				if (keystate[keys.KeyLeft])
+				{
+					rotation -= physics.Rotatespeed;
+				}
+
+				if (keystate[keys.KeyAccelerate])
+				{
+					// covert the rotation angle to a vector
+					var accel = Vector ( Math.cos(rotation), Math.sin(rotation));
+					var xp = accel.x;
+					var yp = accel.y;
+					accel.SetMagnitude(physics.Acceleration);
+					// Add the vector to the current acceleration vector
+					physics.Velocity = physics.Velocity.Add(accel);
+
+					prefabs.CreateParticle(pos.x - xp*20,pos.y - yp*20,-Math.random()*xp*4,-Math.random()*yp*4,"White");
+				}
+
+				keys.ShotElapsedTime++;
+				if ( keystate[keys.KeyShoot] && keys.ShotElapsedTime >= keys.ShotRate)
+				{
+					var direction = Vector ( Math.cos(rotation), Math.sin(rotation));
+					var shotpos = Vector(pos.x + direction.x * 10, pos.y + direction.y * 10);
+					direction.SetMagnitude(12);
+					CreateShot(shotpos, direction, rotation);
+					keys.ShotElapsedTime = 0;
+				}
+				
+				e.components["Rotation"].Rotation = rotation;
 			}
-		}		
+		}
+	}
+	
+	function ProcessShots()
+	{
+		for ( var eIdx=entities[LAYER_PLAYER_SHOT].length-1; eIdx >= 0; eIdx--)
+		{
+			var e = entities[LAYER_PLAYER_SHOT].data[eIdx];
+			if (e && e.components["PlayerShot"] && e.components["Position"] && e.components["Physics"])
+			{
+				if ( e.components["Collide"])
+				{
+					if ( e.components["Collide"].Collided)
+					{
+						e.components["Collide"].Destroy = true;
+					}
+				}
+			}		
+		}
 	}
 	
 	function CreateShot(pos,velocity, rotate)
@@ -775,7 +865,6 @@ SysDestroyer = function()
 					entities[layer].Delete(eIdx);
 				}
 			}
-			else
 			if (e && e.components["Collide"])
 			{
 				if ( e.components["Collide"].Destroy)
@@ -1072,9 +1161,18 @@ function PrefabManager()
 	var playerShots = QuickCollection();
 	var EnemyA = QuickCollection();
 	var EnemyB = QuickCollection();
+	var PowerUps = QuickCollection();
 	var RadarHud = QuickCollection();
 	var Spawner = QuickCollection();
 
+	obj.Count = function(type)
+	{
+		if ( type == "EnemyA")
+			return EnemyA.length;
+		if ( type == "EnemyB")
+			return EnemyB.length;
+	}
+	
 	obj.CreatePlayer = function (keyleft, keyright, keyaccelerate, keyshoot)
 	{
 		var entity = players.Reclaim();
@@ -1087,7 +1185,7 @@ function PrefabManager()
 			entity.AddComponent(CompPlayer());
 			
 			entity.AddComponent(CompScreenBounce());
-			entity.AddComponent(CompCollide());
+			entity.AddComponent(CompCollide(LAYER_POWER_UP));
 			entity.AddComponent(CompPrefab("Player"));
 			entity.AddComponent(CompCamera());
 			entity.AddComponent(CompGamePos());
@@ -1187,7 +1285,6 @@ function PrefabManager()
 			var entity = Entity();
 			var colour = "Yellow";
 
-
 			entity.AddComponent(CompPosition());
 			entity.AddComponent(CompPhysics());
 			entity.AddComponent(CompScreenWrap());
@@ -1243,7 +1340,6 @@ function PrefabManager()
 			var entity = Entity();
 			var colour = "Green";
 
-
 			entity.AddComponent(CompPosition());
 			entity.AddComponent(CompPhysics());
 			entity.AddComponent(CompScreenBounce());
@@ -1257,14 +1353,14 @@ function PrefabManager()
 
 		ec = entity.components.Prefab;
 //		ec.Type = "EnemyB";
-		ec.Position = EnemyA.length;
+		ec.Position = EnemyB.length;
 		
 		var ec = entity.components.Position;
 		ec.Position.x = xpos;
 		ec.Position.y = ypos;
 
-		var ec = entity.components.Rotation;
-		ec.Rotation = 0;
+//		var ec = entity.components.Rotation;
+//		ec.Rotation = 0;
 		
 		ec = entity.components.Collide
 		ec.Collided = false;
@@ -1297,7 +1393,7 @@ function PrefabManager()
 			entity.AddComponent(CompPhysics());
 			entity.AddComponent(CompLifeSpan());
 			entity.AddComponent(CompVisible(playerShotData,"White",LAYER_PLAYER_SHOT));
-			entity.AddComponent(CompCollide());
+			entity.AddComponent(CompCollide(LAYER_ENEMY));
 			entity.AddComponent(CompPlayerShot());
 			entity.AddComponent(CompPrefab("PlayerShot"));
 //			entity.AddComponent(CompGamePos());
@@ -1342,6 +1438,49 @@ function PrefabManager()
 		return entity;
 	}
 	
+	obj.CreatePowerUp = function (xpos,ypos,xvel,yvel)
+	{
+		var entity = PowerUps.Reclaim();
+		if ( entity == null )
+		{
+			var entity = Entity();
+			entity.AddComponent(CompPosition());
+			entity.AddComponent(CompPhysics());
+			entity.AddComponent(CompLifeSpan());
+			entity.AddComponent(CompVisible(powerUpData,"Cyan",LAYER_POWER_UP));
+			entity.AddComponent(CompCollide(LAYER_PLAYER));
+			entity.AddComponent(CompPowerUp());
+			entity.AddComponent(CompPrefab("PowerUp"));
+			entity.AddComponent(CompGamePos());
+		}
+
+		ec = entity.components.Prefab;
+		ec.Position = PowerUps.length;
+		
+		var ec = entity.components.Position;
+		ec.Position.x = xpos;
+		ec.Position.y = ypos;
+
+		ec = entity.components.Physics
+		ec.Velocity.x = xvel;
+		ec.Velocity.y = yvel;
+		ec.Acceleration = 0;
+		ec.Drag = .7;
+
+		var ec = entity.components.Lifespan;
+		ec.MaxAge = 50000;
+		ec.Age = 0;
+
+		ec = entity.components.Collide
+		ec.Collided = false;
+		ec.Destroy = false;
+		
+		PowerUps.Insert(entity);
+		entities[LAYER_POWER_UP].Insert(entity);
+		
+		return entity;
+	}
+	
 	obj.CreateRadarHud = function()
 	{
 		var entity = playerShots.Reclaim();
@@ -1368,7 +1507,7 @@ function PrefabManager()
 		return entity;
 	}
 
-	obj.CreateSpawner = function( xpos, ypos, spawnRate)
+	obj.CreateSpawner = function( xpos, ypos, spawnRate, prefabType)
 	{
 		var entity = Spawner.Reclaim();
 		if ( entity == null )
@@ -1386,6 +1525,7 @@ function PrefabManager()
 		var ec = entity.components.Spawner;
 		ec.SpawnRate = spawnRate;
 		ec.ElapsedTime = 0;
+		ec.SpawnPrefabType = prefabType;
 
 		Spawner.Insert(entity);
 		entities[LAYER_ENEMY].Insert(entity);
