@@ -458,8 +458,8 @@ SysRender = function()
 				}
 				
 				// For debug puposes we will draw the bounding box
-	//			var topleft = e.components["Visible"].Topleft;
-	//			var bottomright = e.components["Visible"].Bottomright;
+	//			var topleft = e.components.Visible.Topleft;
+	//			var bottomright = e.components.Visible.Bottomright;
 	//			ctx.beginPath();
 	//			ctx.moveTo(pos.x + topleft.x, pos.y + topleft.y);
 	//			ctx.lineTo(pos.x + bottomright.x, pos.y + topleft.y);
@@ -493,11 +493,11 @@ SysCollisions = function()
 						for ( var eIdx2=entities[layer2].length-1; eIdx2 >= 0; eIdx2--)
 						{
 							var e2 = entities[layer2].data[eIdx2];
-							if (e2 && e2.components.Position && e2.components.Visible && e2.components.Collide ) //&& e2.components["Collide"].Collided == false )
+							if (e2 && e2.components.Position && e2.components.Visible && e2.components.Collide ) 
 							{
-								var topleft2 = e2.components["Visible"].Topleft;
-								var bottomright2 = e2.components["Visible"].Bottomright;
-								var pos2 = e2.components["Position"].Position;
+								var topleft2 = e2.components.Visible.Topleft;
+								var bottomright2 = e2.components.Visible.Bottomright;
+								var pos2 = e2.components.Position.Position;
 								// see if this other entity has collided with us
 								// Note this is all terribly inneficient but is 
 								// ok for a small amount of sprites
@@ -531,7 +531,7 @@ SysCamera = function()
 			if (e && e.components.Camera && e.components.Position && e.components.Physics)
 			{
 				cameraPosX = e.components.Position.Position.x + e.components.Physics.Velocity.x * 50;
-				cameraPosY = 0; //e.components["Position"].Position.y;
+				cameraPosY = 0;
 			}
 		}
 	}
@@ -729,10 +729,10 @@ SysEnemies = function()
 		if ( e.components.PowerUp && e.components.Position && e.components.Physics )
 		{
 			// very basic just move towards player slowly
-			if ( e.components["Physics"] && playerEntity )
+			if ( e.components.Physics && playerEntity )
 			{
-				var physics = e.components["Physics"];
-				var vel = e.components["Physics"].Velocity;
+				var physics = e.components.Physics;
+				var vel = physics.Velocity;
 				
 				var playerPos = playerEntity.components.Position.Position;
 				var enemyPos = e.components.Position.Position;
@@ -783,7 +783,7 @@ SysEnemies = function()
 			{
 				e.components.Collide.Destroy = true;
 				if ( e.components.Position && e.components.Visible)
-					CreateExplosion(e.components["Position"].Position, e.components["Visible"].Colour);
+					CreateExplosion(e.components.Position.Position, e.components.Visible.Colour);
 				if ( e.components.Position )
 					prefabs.CreatePowerUp(e.components.Position.Position.x,e.components.Position.Position.y,0,0);
 				PlaySound(2);
@@ -877,7 +877,7 @@ SysPlayer = function()
 		for ( var eIdx=entities[LAYER_PLAYER_SHOT].length-1; eIdx >= 0; eIdx--)
 		{
 			var e = entities[LAYER_PLAYER_SHOT].data[eIdx];
-			if (e && e.components.PlayerShot && e.components.Collide ) // && e.components["Position"] && e.components["Physics"])
+			if (e && e.components.PlayerShot && e.components.Collide ) 
 			{
 				if ( e.components.Collide.Collided)
 				{
