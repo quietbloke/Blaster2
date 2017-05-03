@@ -151,7 +151,7 @@ main = function ()
 	l.textContent = fpsText;
 	// end of fps code
 	
-	ctx.globalAlpha = 0.25;
+	ctx.globalAlpha = 0.75;
 	ctx.fillRect(-screenWidth/2, -screenHeight/2, screenWidth, screenHeight);
 	ctx.globalAlpha = 1;
 
@@ -364,14 +364,16 @@ SysRender = function()
 					ctx.beginPath();
 					scrX = pos.x / 10;
 					scrY = pos.y / 10 - screenHeight/2 + 40;
-					ctx.moveTo(scrX,scrY);
-					ctx.lineTo(scrX+4,scrY);
-					ctx.lineTo(scrX+4,scrY+4);
-					ctx.lineTo(scrX,scrY+4);
-					ctx.lineTo(scrX,scrY);
+					ctx.moveTo(scrX-2,scrY-2);
+					ctx.lineTo(scrX+2,scrY-2);
+					ctx.lineTo(scrX+2,scrY+2);
+					ctx.lineTo(scrX-2,scrY+2);
+					ctx.lineTo(scrX-2,scrY-2);
 					ctx.strokeStyle=e.components["Visible"].Colour;
 					ctx.stroke();
 				}
+				
+				
 				// For debug puposes we will draw the bounding box
 	//			var topleft = e.components["Visible"].Topleft;
 	//			var bottomright = e.components["Visible"].Bottomright;
@@ -386,6 +388,16 @@ SysRender = function()
 			}
 		}
 	}
+	// draw the HUD ( rader )
+	ctx.beginPath();
+	scrX = gameXMin / 10;
+	scrY = -screenHeight/2;
+	ctx.moveTo(scrX-2,scrY - 2);
+	ctx.lineTo(scrX-2, scrY + screenHeight/10 + 4);
+	ctx.lineTo(scrX + gameWidth/10 + 4, scrY + screenHeight/10 + 4);
+	ctx.lineTo(scrX + gameWidth/10 + 4, scrY);
+	ctx.strokeStyle="white";
+	ctx.stroke();
 }
 
 SysCollisions = function()
@@ -632,13 +644,13 @@ SysEnemies = function()
 	{
 		for ( var p = 0; p < 50; p++)
 		{
-			var entity = Entity();
-			var colour = colour;
-			entity.AddComponent(CompPosition(pos.x,pos.y,0));
-			entity.AddComponent(CompPhysics((Math.random()-.5)*2,(Math.random()-.5)*2,1,1));
-			entity.AddComponent(CompLifeSpan(50 + Math.random()*50));
-			entity.AddComponent(CompVisible(explosionData,colour,8));
-			entities.Insert(entity);
+//			var entity = Entity();
+//			var colour = colour;
+//			entity.AddComponent(CompPosition(pos.x,pos.y,0));
+//			entity.AddComponent(CompPhysics((Math.random()-.5)*2,(Math.random()-.5)*2,1,1));
+//			entity.AddComponent(CompLifeSpan(50 + Math.random()*50));
+//			entity.AddComponent(CompVisible(explosionData,colour,8));
+//			entities.Insert(entity);
 			prefabs.CreateParticle(pos.x,pos.y,(Math.random()-.5)*2,(Math.random()-.5)*2,colour);
 		}
 	}
@@ -669,10 +681,14 @@ SysPlayer = function()
 			{
 				// covert the rotation angle to a vector
 				var accel = Vector ( Math.cos(rotation), Math.sin(rotation));
+				var xp = accel.x;
+				var yp = accel.y;
 				accel.SetMagnitude(physics.Acceleration);
 				// Add the vector to the current acceleration vector
 				physics.Velocity = physics.Velocity.Add(accel);
-				
+
+				prefabs.CreateParticle(pos.x - xp*20,pos.y - yp*20,(Math.random()-.5)-Math.random()*xp*4,(Math.random()-.5)-Math.random()*yp*4,"White");
+
 			}
 
 			keys.ShotElapsedTime++;
