@@ -1,0 +1,1270 @@
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<title>Micro Invasion</title>
+<style>
+Body{background-color:#282828;color:#ffffff;margin:0px;}
+Canvas{position:fixed;background-color:black;}
+#counter{position:absolute; bottom:0;right:0;color:#ffffff;display:hidden;}
+#debug{position:absolute; bottom:0;left:0;color:#ffffff;display:hidden;}
+</style>
+</head>
+<body>
+	<canvas id="myCanvas">Sorry... your browser does not support the canvas element.</canvas>
+	<p id="counter">counter</p>
+	<p id="debug">debug</p>
+</body>
+<script>
+// Global variables
+// used for calculating and showing the frames per second
+var dwFrames=0;
+var dwCurrentTime=0;
+var dwLastUpdateTime=0;
+var dwElapsedTime=0;
+var fpsText;
+
+var keystate = new Array();
+
+var canvas;
+var ctx;
+
+var audio = new Array();
+
+// browser stuff
+function doResize()
+{
+	var canvas = document.getElementById('myCanvas');
+	var scrH = window.innerHeight;
+	var scrW = window.innerWidth;
+
+	var ratioX = 256 / scrW;
+	var ratioY = 144 / scrH;
+
+	var ratio = Math.max(ratioX,ratioY);
+		
+	var width = 256 / ratio;
+	var height = 144 / ratio;
+
+	canvas.style.height = height+"px";
+	canvas.style.width = width+"px";
+	canvas.style.marginLeft = (scrW-width)/2;
+	canvas.style.marginTop = (scrH-height)/2;
+}
+
+var shipImage
+var velX = 1;
+var velY = 1;
+var posX = 400;
+var posY = 200;
+var rotate = 0;
+
+var gameWidth = 1280;
+var gameHeight = 768;
+
+var entities = {};	// Entities exists in layers
+var systems = {};
+
+var shipData = [["M",-20,-10],["L",20,0],["L",-20,10],["L",-20,-10] ];
+var enemyData = [["M",-10,-10],["L",10,-10],["L",10,10],["L",-10,10],["L",-10,-10] ];
+var explosionData = [["M",-1,-1],["L",1,-1],["L",1,1],["L",-1,1],["L",-1,-1] ];
+var playerShotData = [["M",-4,-1],["L",4,-1],["L",4,1],["L",-4,1],["L",-4,-1] ];
+
+var LAYER_PLAYER = 1;
+var LAYER_ENEMY = 2;
+var LAYER_PLAYER_SHOT = 4;
+var LAYER_ENEMY_SHOT = 8;
+var LAYER_LAST_LAYER = 8;
+
+var prefabs = PrefabManager();
+
+init = function()
+{
+	if ( typeof(localStorage != "undefined"))
+		hiscore = localStorage.getItem("highscore");
+
+	canvas = document.getElementById('myCanvas');
+	if (canvas.getContext)
+	{
+		canvas.width = gameWidth;
+		canvas.height = gameHeight;
+
+		// when the window resizes we want to resize the canvas
+		window.onresize = function() { doResize(); };
+		doResize();
+
+//		BuildSounds();
+
+		document.addEventListener("keydown", function (e) { keystate[e.keyCode] = 1;} );
+		document.addEventListener("keyup", function (e) { keystate[e.keyCode] = 0; });	
+
+		// set timer to game main function
+		ctx = canvas.getContext('2d');
+
+		entities = QuickCollection();
+		entities[0] = QuickCollection();
+		entities[1] = QuickCollection();
+		entities[2] = QuickCollection();
+		entities[4] = QuickCollection();
+		entities[8] = QuickCollection();
+		
+//		var entity2 = CreatePlayer(90,67,83); // z,c,s
+
+		// create some random enemies
+		for ( var l = 0; l < 10; l++ )
+		{
+			CreateEnemy(l % 2);
+		}
+
+		var entity = CreatePlayer(37,39,38,90);// cursor keys, z
+		
+		timerId = setInterval ( main, Math.floor(1000/50));
+	}
+}
+
+CreatePlayer = function(keyleft, keyright, keyaccelerate, keyshoot)
+{
+	return prefabs.CreatePlayer(keyleft, keyright, keyaccelerate, keyshoot);
+}
+
+CreateEnemy = function (wrapFlag)
+{
+	return prefabs.CreateEnemyA(Math.random()*(gameWidth-50) + 25,Math.random()*(gameHeight-50) + 25);
+}
+
+main = function ()
+{
+	// fps code .... this can go when we are done
+	dwFrames++;
+	dwCurrentTime = (new Date).getTime();
+	dwElapsedTime = dwCurrentTime - dwLastUpdateTime;
+	if(dwElapsedTime >= 1000)
+	{        
+		fpsText = "FPS " + dwFrames;
+		dwLastUpdateTime = dwCurrentTime;
+		dwFrames = 0;
+	}
+	var l = document.getElementById('counter');
+	l.textContent = fpsText;
+	// end of fps code
+	
+	ctx.globalAlpha = 0.25;
+	ctx.fillRect(0, 0, gameWidth, gameHeight);
+	ctx.globalAlpha = 1;
+
+	SysPlayer();
+	SysEnemies();
+	SysPhysics();
+	SysRender();
+	SysCollisionsV2();
+	SysDestroyer();
+}
+
+var nextId = 0;
+// An entity is just a unique id and contains a collection of components
+Entity = function()
+{
+	var obj = {};
+	obj.components = new Array();
+	obj.ID = nextId;
+	nextId++;
+	
+	obj.AddComponent= function ( component )
+	{
+		obj.components[component.Name] = component;
+	}
+	
+	obj.DeleteComponent= function ( componentName )
+	{
+		delete obj.components[componentName];
+	}
+	
+	return obj;
+}
+
+// components have a name and can contain a block of data
+// For the moment all components are prefixed with Comp
+
+CompPosition = function (xpos, ypos, rotation)
+{
+	return {"Name" : "Position", 
+		"Position" : new Vector(xpos,ypos),
+		"Rotation" : rotation};
+}
+
+CompVisible = function (drawData,colour,layer)
+{
+	// given the data calculate the bounding box
+	var topleft = Vector(0,0);
+	var bottomright = Vector(0,0);
+
+	return {"Name" : "Visible", 
+		"Drawdata" : drawData,
+		"Colour" : colour,
+		"Layer" : layer,
+		"Topleft" : topleft,
+		"Bottomright" : bottomright};
+}
+
+CompPhysics = function (xvel, yvel, acceleration, drag, rotatespeed, maxvelocity)
+{
+	return {"Name" : "Physics", 
+		"Velocity" : new Vector(xvel,yvel), 
+		"Acceleration" : acceleration, 
+		"Drag" : drag,
+		"Rotatespeed" : rotatespeed,
+		"Maxvelocity" : maxvelocity};
+}
+
+CompPlayer = function ( leftkey, rightkey, acceleratekey, shootkey)
+{
+	return {"Name" : "Player", 
+		"KeyLeft" : leftkey, 
+		"KeyRight" : rightkey, 
+		"KeyAccelerate" : acceleratekey,
+		"KeyShoot" : shootkey,
+		"ShotRate" : 10,
+		"ShotElapsedTime" : 0};
+}
+
+CompLifeSpan = function ( maxAge )
+{
+	return {"Name" : "Lifespan", 
+		"MaxAge" : maxAge, 
+		"Age" : 0 };
+}
+
+CompScreenWrap = function ()
+{
+	return {"Name" : "Screenwrap" };
+}
+
+CompScreenBounce = function ()
+{
+	return {"Name" : "Screenbounce" };
+}
+
+CompEnemyA = function ()
+{
+	return {"Name" : "EnemyA" };
+}
+
+CompPrefab = function (type, pos)
+{
+	return {"Name" : "Prefab", "Type" : type, "Position" : pos };
+}
+
+CompEnemyB = function ()
+{
+	return {"Name" : "EnemyB" };
+}
+
+CompPlayerShot = function ()
+{
+	return {"Name" : "PlayerShot"};
+}
+
+CompCollide = function (collisionLayers)
+{
+	return {"Name" : "Collide",
+		"Collisionlayers" : collisionLayers, 
+		"Collided" : false,
+		"Destroy" : false};
+}
+
+// Systems will perform actions on any entities that contains all the 
+// components they require.
+// For the moment all Systems are prefixed with Sys
+SysRender = function()
+{
+	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	{
+		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
+		{
+			var e = entities[layer].data[eIdx];
+			if (e && e.components["Position"] && e.components["Visible"])
+			{
+				var pos = e.components["Position"].Position;
+				var data = e.components["Visible"].Drawdata;
+				var rotate = e.components["Position"].Rotation;
+
+				var rotated = [];
+				for ( var pIdx = 0; pIdx < data.length; pIdx++)
+				{
+					var p = data[pIdx];
+					newX = p[1] * Math.cos(rotate) - p[2] * Math.sin(rotate);
+					newY = p[1] * Math.sin(rotate) + p[2] * Math.cos(rotate);
+
+					rotated[pIdx] = [p[0],newX, newY];
+					ctx.lineTo(scrX,scrY);
+				}
+
+				// Don't know if this is the place to do this but
+				// as we have now rotated and are about to draw
+				// we can recalculate the bounding box
+				var topleft = e.components["Visible"].Topleft;
+				var bottomright = e.components["Visible"].Bottomright;
+				topleft.x = 0;
+				topleft.y = 0;
+				bottomright.x = 0;
+				bottomright.y = 0;
+
+				for ( var pIdx = 0; pIdx < rotated.length; pIdx++)
+				{
+					var p = rotated[pIdx];
+					if ( p[1] < topleft.x)
+						topleft.x = p[1];
+					if ( p[1] > bottomright.x)
+						bottomright.x = p[1];
+					if ( p[2] < topleft.y)
+						topleft.y = p[2];
+					if ( p[2] > bottomright.y)
+						bottomright.y = p[2];
+				}
+				topleft.x += 2;
+				topleft.y += 2;
+				bottomright.x -= 2;
+				bottomright.y -= 2;
+
+				// now draw the shape
+				ctx.beginPath();
+				
+				var scrX = pos.x;
+				var scrY = pos.y;
+			
+				for ( var pIdx = 0; pIdx < rotated.length; pIdx++)
+				{
+					var p = rotated[pIdx];
+					scrX = pos.x + p[1];
+					scrY = pos.y + p[2];
+					if ( p[0] == 'M')
+					{
+						ctx.moveTo(scrX,scrY);
+					}
+					else
+					{
+						ctx.lineTo(scrX,scrY);
+					}
+				}
+				ctx.strokeStyle=e.components["Visible"].Colour;
+				ctx.stroke();
+
+				// For debug puposes we will draw the bounding box
+	//			var topleft = e.components["Visible"].Topleft;
+	//			var bottomright = e.components["Visible"].Bottomright;
+	//			ctx.beginPath();
+	//			ctx.moveTo(pos.x + topleft.x, pos.y + topleft.y);
+	//			ctx.lineTo(pos.x + bottomright.x, pos.y + topleft.y);
+	//			ctx.lineTo(pos.x + bottomright.x, pos.y + bottomright.y);
+	//			ctx.lineTo(pos.x + topleft.x, pos.y + bottomright.y);
+	//			ctx.lineTo(pos.x + topleft.x, pos.y + topleft.y);
+	//			ctx.strokeStyle="darkred";
+	//			ctx.stroke();
+			}
+		}
+	}
+}
+
+SysCollisions = function()
+{
+//	for ( var eIdx=0; eIdx < entities.length; eIdx++)
+//	{
+//		var e = entities.data[eIdx];
+//		if (e && e.components["Position"] && e.components["Visible"] && e.components["Collide"])
+//		{
+//			var topleft = e.components["Visible"].Topleft;
+//			var bottomright = e.components["Visible"].Bottomright;
+//			var pos = e.components["Position"].Position;
+//
+//			for ( var eIdx2=0; eIdx2 < entities.length; eIdx2++)
+//			{
+//				var e2 = entities.data[eIdx2];
+//				if (e2 && e2.components["Position"] && e2.components["Visible"] && e2.components["Collide"] 
+//					&& (e2.components["Visible"].Layer & e.components["Collide"].Collisionlayers))
+//				{
+//					if ( e != e2)
+//					{
+//						var topleft2 = e2.components["Visible"].Topleft;
+//						var bottomright2 = e2.components["Visible"].Bottomright;
+//						var pos2 = e2.components["Position"].Position;
+//						// see if this other entity has collided with us
+//						// Note this is all terribly inneficient but is 
+//						// ok for a small amount of sprites
+//
+//						if ( pos.x + topleft.x < pos2.x + bottomright2.x
+//							&& pos.x + bottomright.x > pos2.x + topleft2.x
+//							&& pos.y + topleft.x < pos2.y + bottomright2.y
+//							&& pos.y + bottomright.y > pos2.y + topleft2.y)
+//						{
+//							e.components["Collide"].Collided = true;
+//						}
+//					}
+//				}
+//			}
+//		}
+//	}
+}
+
+SysCollisionsV2 = function()
+{
+	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	{
+		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
+		{
+			var e = entities[layer].data[eIdx];
+			if (e && e.components["Position"] && e.components["Visible"] && e.components["Collide"])
+			{
+				var topleft = e.components["Visible"].Topleft;
+				var bottomright = e.components["Visible"].Bottomright;
+				var pos = e.components["Position"].Position;
+
+				for ( var layer2 = 0; layer2 < LAYER_LAST_LAYER; layer2 == 0 ? layer2 = 1 : layer2 = layer2 << 1)
+				{
+					for ( var eIdx2=entities[layer2].length-1; eIdx2 >= 0; eIdx2--)
+					{
+						var e2 = entities[layer2].data[eIdx2];
+						if (e2 && e2.components["Position"] && e2.components["Visible"] && e2.components["Collide"] ) //&& e2.components["Collide"].Collided == false )
+						{
+							var e1CanCollide = false;
+							var e2CanCollide = false;
+							if ( e2.components["Visible"].Layer & e.components["Collide"].Collisionlayers)
+								e1CanCollide = true;
+							if ( e.components["Visible"].Layer & e2.components["Collide"].Collisionlayers)
+								e2CanCollide = true;
+
+							if ( e1CanCollide || e2CanCollide )
+							{
+								var topleft2 = e2.components["Visible"].Topleft;
+								var bottomright2 = e2.components["Visible"].Bottomright;
+								var pos2 = e2.components["Position"].Position;
+								// see if this other entity has collided with us
+								// Note this is all terribly inneficient but is 
+								// ok for a small amount of sprites
+
+								if ( pos.x + topleft.x < pos2.x + bottomright2.x
+									&& pos.x + bottomright.x > pos2.x + topleft2.x
+									&& pos.y + topleft.x < pos2.y + bottomright2.y
+									&& pos.y + bottomright.y > pos2.y + topleft2.y)
+								{
+									if ( e1CanCollide)
+										e.components["Collide"].Collided = true;
+									if ( e2CanCollide)
+										e2.components["Collide"].Collided = true;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+SysPhysics = function()
+{
+	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	{
+		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
+		{
+			var e = entities[layer].data[eIdx];
+			if (e && e.components["Position"] && e.components["Physics"])
+			{
+				var pos = e.components["Position"].Position;
+				var physics = e.components["Physics"];
+				var vel = e.components["Physics"].Velocity;
+				
+				pos.x = pos.x + vel.x;
+				pos.y = pos.y + vel.y;
+				
+				// Apply the drag
+				vel.x *= e.components["Physics"].Drag;
+				vel.y *= e.components["Physics"].Drag;
+
+				// limit to max velocity
+				if ( physics.Maxvelocity)
+				{
+					if (vel.Magnitude() > physics.Maxvelocity )
+					{
+						vel.SetMagnitude(physics.Maxvelocity);
+					}
+				}
+
+				if (e.components["Screenwrap"])
+				{
+					HandleScreenWrap(pos);
+				}
+
+				if (e.components["Screenbounce"])
+				{
+					HandleScreenBounce(pos,vel);
+				}
+			}
+		}
+	}
+	
+	function HandleScreenWrap(pos)
+	{
+		if ( pos.x <= 0 )
+			pos.x += gameWidth;
+
+		if ( pos.x >= gameWidth-1 )
+			pos.x -= gameWidth;
+
+		if ( pos.y <= 0 )
+			pos.y += gameHeight;
+
+		if ( pos.y >= gameHeight-1 )
+			pos.y -= gameHeight;
+	}
+	
+	function HandleScreenBounce(pos, vel)
+	{
+		if ( pos.x <= 0 && vel.x < 0 )
+			vel.x = -vel.x;
+
+		if ( pos.x >= gameWidth-1 && vel.x > 0  )
+			vel.x = -vel.x;
+
+		if ( pos.y <= 0 && vel.y < 0 )
+			vel.y = -vel.y;
+
+		if ( pos.y >= gameHeight-1 && vel.y > 0)
+			vel.y = -vel.y;
+	}
+}
+
+SysEnemies = function()
+{
+	for ( var eIdx=entities[LAYER_ENEMY].length-1; eIdx >= 0; eIdx--)
+	{
+		var e = entities[LAYER_ENEMY].data[eIdx];
+		if (e && e.components["EnemyA"] && e.components["Position"] && e.components["Physics"])
+		{
+			var pos = e.components["Position"].Position;
+			var rotation = e.components["Position"].Rotation;
+			rotation += Math.PI / 100;
+			e.components["Position"].Rotation = rotation;
+			CheckCollided(e);
+		}
+		if (e && e.components["EnemyB"] && e.components["Position"] && e.components["Physics"])
+		{
+			var pos = e.components["Position"].Position;
+			var rotation = e.components["Position"].Rotation;
+			rotation -= Math.PI / 100;
+			e.components["Position"].Rotation = rotation;
+			CheckCollided(e);
+		}
+	}
+	
+	function CheckCollided ( e)
+	{
+		if ( e.components["Collide"])
+		{
+			if ( e.components["Collide"].Collided)
+			{
+				e.components["Collide"].Destroy = true;
+				CreateExplosion(e.components["Position"].Position, e.components["Visible"].Colour);
+			}
+		}
+	}
+	
+	function CreateExplosion(pos, colour)
+	{
+		for ( var p = 0; p < 50; p++)
+		{
+//			var entity = Entity();
+//			var colour = colour;
+//			entity.AddComponent(CompPosition(pos.x,pos.y,0));
+//			entity.AddComponent(CompPhysics((Math.random()-.5)*2,(Math.random()-.5)*2,1,1));
+//			entity.AddComponent(CompLifeSpan(50 + Math.random()*50));
+//			entity.AddComponent(CompVisible(explosionData,colour,8));
+//			entities.Insert(entity);
+//			prefabs.CreateParticle(pos.x,pos.y,(Math.random()-.5)*2,(Math.random()-.5)*2,colour);
+		}
+	}
+}
+
+SysPlayer = function()
+{
+	for ( var eIdx=0; eIdx < entities[LAYER_PLAYER].length; eIdx++)
+	{
+		var e = entities[LAYER_PLAYER].data[eIdx];
+		if (e && e.components["Player"] && e.components["Position"] && e.components["Physics"])
+		{
+			var pos = e.components["Position"].Position;
+			var rotation = e.components["Position"].Rotation;
+			var physics = e.components["Physics"];
+			var keys = e.components["Player"];
+
+			if (keystate[keys.KeyRight])
+			{
+				rotation += physics.Rotatespeed;
+			}
+			if (keystate[keys.KeyLeft])
+			{
+				rotation -= physics.Rotatespeed;
+			}
+
+			if (keystate[keys.KeyAccelerate])
+			{
+				// covert the rotation angle to a vector
+				var accel = Vector ( Math.cos(rotation), Math.sin(rotation));
+				accel.SetMagnitude(physics.Acceleration);
+				// Add the vector to the current acceleration vector
+				physics.Velocity = physics.Velocity.Add(accel);
+				
+			}
+
+			keys.ShotElapsedTime++;
+			if ( keystate[keys.KeyShoot] && keys.ShotElapsedTime >= keys.ShotRate)
+			{
+				var direction = Vector ( Math.cos(rotation), Math.sin(rotation));
+				var shotpos = Vector(pos.x + direction.x * 10, pos.y + direction.y * 10);
+				direction.SetMagnitude(4);
+				CreateShot(shotpos, direction, rotation);
+				keys.ShotElapsedTime = 0;
+			}
+			
+			e.components["Position"].Rotation = rotation;
+		}
+	}
+
+	for ( var eIdx=entities[LAYER_PLAYER_SHOT].length-1; eIdx >= 0; eIdx--)
+	{
+		var e = entities[LAYER_PLAYER_SHOT].data[eIdx];
+		if (e && e.components["PlayerShot"] && e.components["Position"] && e.components["Physics"])
+		{
+			CheckShotCollided(e);
+		}		
+
+		function CheckShotCollided ( e)
+		{
+			if ( e.components["Collide"])
+			{
+				if ( e.components["Collide"].Collided)
+				{
+					e.components["Collide"].Destroy = true;
+				}
+			}
+		}
+	}
+	
+	function CreateShot(pos,velocity, rotate)
+	{
+		prefabs.CreatePlayerShot(pos.x,pos.y,velocity.x,velocity.y, rotate)
+
+//		var entity = Entity();
+//		entity.AddComponent(CompPosition(pos.x,pos.y,rotate));
+//		entity.AddComponent(CompPhysics(velocity.x,velocity.y,1,1));
+//		entity.AddComponent(CompLifeSpan(200));
+//		entity.AddComponent(CompVisible(playerShotData,"White",LAYER_PLAYER_SHOT));
+//		entity.AddComponent(CompCollide(LAYER_ENEMY));
+//		entity.AddComponent(CompPlayerShot());
+//		entities.Insert(entity);
+	}
+}
+
+SysDestroyer = function()
+{
+	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	{
+		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
+		{
+			var e = entities[layer].data[eIdx];
+			if (e && e.components["Lifespan"] )
+			{
+				e.components["Lifespan"].Age+= 1;
+				if ( e.components["Lifespan"].Age >= e.components["Lifespan"].MaxAge)
+				{
+					if ( e.components["Prefab"] )
+					{
+						prefabs.Delete(e.components["Prefab"].Type, e.components["Prefab"].Position)
+					}
+					entities[layer].Delete(eIdx);
+				}
+			}
+			else
+			if (e && e.components["Collide"])
+			{
+				if ( e.components["Collide"].Destroy)
+				{
+					if ( e.components["Prefab"] )
+					{
+						prefabs.Delete(e.components["Prefab"].Type, e.components["Prefab"].Position)
+					}
+								if ( EnemyA.length > 1)
+					{
+						EnemyA.data[EnemyA.length-1].components.Prefab.Position = position;
+					}
+					EnemyA.Delete(position);
+
+					entities[layer].Delete(eIdx);
+				}
+			}
+		}
+	}
+}
+
+Vector = function(x,y)
+{
+	var obj = {};
+	
+	obj.x = x;
+	obj.y = y;
+
+	obj.Add = function(v1)
+	{
+		return Vector(obj.x+v1.x, obj.y+v1.y);
+	}
+
+	obj.Subtract = function(v1)
+	{
+		return Vector(obj.x-v1.x, obj.y-v1.y);
+	}
+
+	obj.Multiply = function(v1)
+	{
+		return Vector(obj.x*v1.x, obj.y*v1.y);
+	}
+
+	obj.Magnitude = function()
+	{
+		return Math.sqrt(obj.x*obj.x + obj.y*obj.y);
+	}
+
+	obj.Normalise = function()
+	{
+		var mag = obj.Magnitude();
+		obj.x /= mag;
+		obj.y /= mag;
+	}
+
+	obj.SetMagnitude = function(newMagnitude)
+	{
+		obj.Normalise();
+		obj.x *= newMagnitude;
+		obj.y *= newMagnitude;
+	}
+
+	obj.DotProduct = function(v)
+	{
+		return obj.x * v.x + obj.y * v.y;
+	}
+
+	obj.ScalarMultiply = function(scalar)
+	{
+		obj.x *= scalar;
+		obj.y *= scalar;
+	}
+
+	return obj;
+}
+
+BuildSounds = function ()
+{
+	// player shot
+	audio[0] = CreateSound(3000,2800,1000,200,.8,0,1,1);
+	// player explode
+	audio[1] = CreateSound(600,600,800,200,.5,0,2,2);
+	// invader move
+	audio[2] = CreateSound(300,300,2000,150,.5,0.0,.2,.2);
+	audio[3] = CreateSound(200,200,2000,150,.5,0.0,.2,.2);
+	audio[4] = CreateSound(250,250,2000,150,.5,0.0,.2,.2);
+	audio[5] = CreateSound(200,200,2000,150,.5,0.0,.2,.2);
+	// invader explode
+	audio[6] = CreateSound(200,2000,1000,100,.5,0.0,.3,.1);
+}
+
+CreateSound = function ( startFreq, endFreq, noiseFreq, noiseFreqAdj, startVol, endVol, duration, freqDuration)
+{
+	var noiseFreq = QBSynthJS.InputMultiplier(
+		QBSynthJS.InputOscilatorRandom(QBSynthJS.InputBasic(noiseFreq),0), 
+		QBSynthJS.InputBasic(noiseFreqAdj));
+
+	var freqShiftAndNoise = QBSynthJS.InputAdd(
+		QBSynthJS.InputLinearRepeat(startFreq,endFreq,QBSynthJS.InputBasic(1/freqDuration)), 
+		noiseFreq);
+	
+	var volume = QBSynthJS.InputLinearRepeat(startVol,endVol,QBSynthJS.InputBasic(1/duration));
+
+	var osc = QBSynthJS.InputMultiplier(
+		QBSynthJS.InputOscilatorSquare(freqShiftAndNoise,0), 
+		volume)
+	
+	output = QBSynthJS.GenerateData(8000, duration, osc);
+	var wav = QBSound.BuildWavData(output,8000,0);
+	return QBSound.CreateAudioObject(wav);
+}
+
+PlaySound = function(i)
+{
+	var a=audio[i];
+	a.pause();
+	a.currentTime=0;
+	a.play();
+}
+
+var QBSynthJS = new function()
+{
+	var _this = this;
+
+	this.InputBasic = function (value)
+	{
+	  var obj = {};
+	  obj.GetValue = function(timeSpan)
+	  {
+	    return value;
+	  }
+	  return obj;
+	}
+
+	this.InputLinearRepeat = function(startValue, endValue,frequency)
+	{
+	  var obj = {};
+	  var totalTime = 0;
+	  var duration = 1/frequency.GetValue(0);
+	  obj.GetValue = function(timeSpan)
+	  {
+	  	var newDuration = 1/frequency.GetValue(timeSpan); 
+	  	totalTime += timeSpan;
+	  	while ( totalTime >= duration)
+	  	{
+			totalTime -= duration;
+			duration = newDuration;
+	  	}
+	    return startValue + (endValue - startValue) / duration * totalTime;
+	  }
+	  return obj;
+	}
+
+	this.InputMultiplier = function(input1, input2)
+	{
+	  var obj = {};
+	  obj.GetValue = function(timeSpan)
+	  {
+	    return input1.GetValue(timeSpan) * input2.GetValue(timeSpan);
+	  }
+	  return obj;
+	}
+
+	this.InputAdd = function(input1, input2)
+	{
+	  var obj = {};
+	  obj.GetValue = function(timeSpan)
+	  {
+	    return input1.GetValue(timeSpan) + input2.GetValue(timeSpan);
+	  }
+	  return obj;
+	}
+
+	this.InputOscilatorSquare = function(frequency, startAngle)
+	{
+		var obj = {};
+		var angle = 0;
+
+		if ( startAngle !== undefined)
+			angle = startAngle;
+
+		obj.GetValue = function(timeSpan)
+		{
+			var angleInc = timeSpan * frequency.GetValue(timeSpan) * (Math.PI * 2);
+
+			angle += angleInc;
+			if ( angle >= Math.PI * 2)
+			  angle -= Math.PI * 2;
+
+		    var value = Math.sin(angle);
+		    if ( value >= 0)
+		     	return 1
+		    else
+		     	return -1;
+		};
+		return obj;
+	}
+
+	this.InputOscilatorRandom = function(frequency, startAngle)
+	{
+	 	var obj = {};
+	  	var angle = 0;
+		var value = (Math.random()*2) - 1;
+
+		if ( startAngle !== undefined)
+	   		angle = startAngle;
+
+		obj.GetValue = function(timeSpan)
+		{
+			var angleInc = timeSpan * frequency.GetValue(timeSpan) * (Math.PI * 2);
+
+			angle += angleInc;
+			if ( angle > Math.PI * 2)
+			{
+			  angle -= Math.PI * 2;
+			  value = (Math.random()*2) - 1;
+			}
+	    	return value;
+	  	};
+		return obj;
+	}
+
+	this.GenerateData = function(bitrate, duration, osc)
+	{
+	  var values = [];
+	  var valueSize = 1;
+	  var inc = 1/bitrate;
+
+	  values[0] = osc.GetValue(0);
+	  for ( var x = inc; x <= duration;x = x + inc)
+	  {
+	    var value = osc.GetValue(inc);
+
+	    values[valueSize++] = value;
+	  }
+
+	  return values;
+	}
+}
+
+var QBSound = new function()
+{
+	function insertLong(inString, index, inValue)
+	{
+		var retString = inString.substr(0,index);
+		for (i = 0; i < 4; ++i) {
+		  retString += String.fromCharCode(inValue & 255);
+		  inValue = inValue >> 8;
+		}
+		retString += inString.substr(index+4);
+		return retString;
+	}
+
+	this.BuildWavData = function (values,bitrate,channel)
+	{
+		var n = values.length;
+		var wavData = "RIFF****WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00********\x01\x00\x08\x00data****";
+
+		// ChunkSize
+		var numval = n + 36;
+		wavData=insertLong(wavData,4,numval);
+
+		numval = bitrate; // byterate
+		wavData = insertLong(wavData,24,numval);
+	 
+		  // BitRate
+		numval = bitrate * 8; //44100;
+		wavData = insertLong(wavData,28,numval);
+	 
+		  // Subchunk2Size
+	//      insertLong(n);
+		numval = n;
+		wavData = insertLong(wavData,40,numval);
+		  
+		// Output sound data
+		for (var i = 0; i < n; ++i)
+		{
+			var charCode = Math.round(Math.min(127, Math.max(-127, values[i]*127))+127);
+			wavData += String.fromCharCode(charCode);
+		}
+		
+		return wavData		
+	}
+
+	this.CreateAudioObject = function (wavData)
+	{
+		var encoded = btoa(wavData);
+		src = 'data:audio/wav;base64,' + encoded;
+		var a = new Audio();
+		a.src = src;
+		return a;
+	}
+}
+
+function PrefabManager()
+{
+	var obj = {};
+	var players = QuickCollection();
+	var particles = QuickCollection();
+	var playerShots = QuickCollection();
+	var EnemyA = QuickCollection();
+	var EnemyB = QuickCollection();
+
+	obj.CreatePlayer = function (keyleft, keyright, keyaccelerate, keyshoot)
+	{
+		var entity = players.Reclaim();
+		if ( entity == null )
+		{
+			entity = Entity();
+			entity.AddComponent(CompPosition());
+			entity.AddComponent(CompPhysics()); 
+			entity.AddComponent(CompVisible());
+			entity.AddComponent(CompPlayer());
+			
+			entity.AddComponent(CompScreenBounce());
+			entity.AddComponent(CompCollide());
+			entity.AddComponent(CompPrefab("Player"));
+		}
+		
+		ec = entity.components.Prefab;
+		ec.Type = "Player";
+		ec.Position = players.length;
+		
+
+		var ec = entity.components.Position;
+		ec.Position.x = 200;
+		ec.Position.y = 200;
+		ec.Rotation = 0;
+
+		ec = entity.components.Physics
+		ec.Velocity.x = 0;
+		ec.Velocity.y = 0;
+		ec.Acceleration = .5;
+		ec.Drag = .99;
+		ec.Rotatespeed = Math.PI/50;
+		ec.Maxvelocity = 2;
+
+		ec = entity.components.Visible;
+		ec.Drawdata = shipData;
+		ec.Colour = "White";
+		ec.Layer = LAYER_PLAYER;
+
+		ec = entity.components.Player;
+		ec.KeyLeft = keyleft;
+		ec.KeyRight = keyright;
+		ec.KeyAccelerate = keyaccelerate;
+		ec.KeyShoot = keyshoot;
+		
+		entities[LAYER_PLAYER].Insert(entity);
+		
+		return entity;	
+	}
+	
+	obj.CreateParticle = function (xpos, ypos, xvel, yvel, colour)
+	{
+		var entity = particles.Reclaim();
+		if ( entity == null )
+		{
+			entity = Entity();
+			var colour = colour;
+			entity.AddComponent(CompPosition());
+			entity.AddComponent(CompPhysics());
+			entity.AddComponent(CompLifeSpan());
+			entity.AddComponent(CompVisible());
+			entity.AddComponent(CompPrefab("Particle"));
+			
+			console.log("Creating particle");
+		}
+
+		ec = entity.components.Prefab;
+		ec.Type = "Particle";
+		ec.Position = particles.length;
+		
+		var ec = entity.components.Position;
+		ec.Position.x = xpos;
+		ec.Position.y = ypos;
+		ec.Rotation = 0;
+
+		ec = entity.components.Physics
+		ec.Velocity.x = xvel;
+		ec.Velocity.y = yvel;
+		ec.Acceleration = 1;
+		ec.Drag = 1;
+
+		ec = entity.components.Visible;
+		ec.Drawdata = explosionData;
+		ec.Colour = colour;
+		ec.Layer = LAYER_PLAYER;
+
+		ec = entity.components.Lifespan;
+		ec.MaxAge = 50;
+		ec.Age = 0;
+
+		particles.Insert(entity);
+		entities[0].Insert(entity);
+		
+		return entity;
+	}
+	
+	obj.CreateEnemyA = function ( xpos, ypos)
+	{
+		var entity = EnemyA.Reclaim();
+		if ( entity == null )
+		{
+			var entity = Entity();
+			var colour = "Yellow";
+
+
+			entity.AddComponent(CompPosition());
+			entity.AddComponent(CompPhysics());
+			entity.AddComponent(CompScreenWrap());
+			entity.AddComponent(CompEnemyA());
+
+			entity.AddComponent(CompCollide(LAYER_PLAYER | LAYER_PLAYER_SHOT));
+			entity.AddComponent(CompVisible(enemyData,colour,LAYER_ENEMY));
+			entity.AddComponent(CompPrefab("EnemyA"));
+		}
+
+		ec = entity.components.Prefab;
+		ec.Type = "EnemyA";
+		ec.Position = EnemyA.length;
+		
+		var ec = entity.components.Position;
+		ec.Position.x = xpos;
+		ec.Position.y = ypos;
+		ec.Rotation = 0;
+
+		ec = entity.components.Physics
+		ec.Velocity.x = (Math.random()-.5)*4;
+		ec.Velocity.y = (Math.random()-.5)*4;
+		ec.Acceleration = 1;
+		ec.Drag = 1;
+
+		ec = entity.components.Visible;
+		ec.Drawdata = enemyData;
+		ec.Colour = "Green";
+		ec.Layer = LAYER_ENEMY;
+
+		EnemyA.Insert(entity);
+		entities[LAYER_ENEMY].Insert(entity);
+
+		return entity;
+	}
+	
+	obj.CreatePlayerShot = function (xpos,ypos,xvel,yvel, rotation)
+	{
+		var entity = playerShots.Reclaim();
+		if ( entity == null )
+		{
+			var entity = Entity();
+			entity.AddComponent(CompPosition());
+			entity.AddComponent(CompPhysics());
+			entity.AddComponent(CompLifeSpan());
+			entity.AddComponent(CompVisible());
+			entity.AddComponent(CompCollide());
+			entity.AddComponent(CompPlayerShot());
+			entity.AddComponent(CompPrefab("PlayerShot"));
+
+			console.log("Creating playershot");
+		}
+
+		ec = entity.components.Prefab;
+		ec.Type = "PlayerShot";
+		ec.Position = playerShots.length;
+		
+		var ec = entity.components.Position;
+		ec.Position.x = xpos;
+		ec.Position.y = ypos;
+		ec.Rotation = rotation;
+
+		ec = entity.components.Physics
+		ec.Velocity.x = xvel;
+		ec.Velocity.y = yvel;
+		ec.Acceleration = 0;
+		ec.Drag = 1;
+
+		var ec = entity.components.Lifespan;
+		ec.MaxAge = 50;
+		ec.Age = 0;
+
+		ec = entity.components.Visible;
+		ec.Drawdata = playerShotData;
+		ec.Colour = "White";
+		ec.Layer = LAYER_PLAYER_SHOT;
+
+		ec = entity.components.Collide
+		ec.Collided = false;
+		ec.Destroy = false;
+		
+		playerShots.Insert(entity);
+		entities[LAYER_PLAYER_SHOT].Insert(entity);
+		
+		return entity;
+	}
+	
+	obj.Delete = function(type, position)
+	{
+		if ( type = "Particle")
+		{
+			// Bit of a Hack
+			// we need to repoint the last entity prefab entry to contain the position
+			// of the one we are deleting ( as that is where it will end up after the delete )
+			if ( particles.length > 1)
+			{
+				particles.data[particles.length-1].components.Prefab.Position = position;
+			}
+			particles.Delete(position);
+		}
+		if ( type = "PlayerShot")
+		{
+			// Bit of a Hack
+			// we need to repoint the last entity prefab entry to contain the position
+			// of the one we are deleting ( as that is where it will end up after the delete )
+			if ( playerShots.length > 1)
+			{
+				playerShots.data[playerShots.length-1].components.Prefab.Position = position;
+			}
+			playerShots.Delete(position);
+		}
+		if ( type = "EnemyA")
+		{
+			// Bit of a Hack
+			// we need to repoint the last entity prefab entry to contain the position
+			// of the one we are deleting ( as that is where it will end up after the delete )
+			if ( EnemyA.length > 1)
+			{
+				EnemyA.data[EnemyA.length-1].components.Prefab.Position = position;
+			}
+			EnemyA.Delete(position);
+		}
+	}
+	
+	return obj;
+}
+
+function QuickCollection()
+{
+	var obj = {};
+	obj.length = 0;
+	obj.data = new Array();
+	
+	obj.Insert = function(item)
+	{
+		obj.data[obj.length] = item;
+		obj.length++;
+	}
+	
+	// This function will return the first object in the list
+	// that is now "deleted".
+	obj.Reclaim = function()
+	{
+		if ( obj.length <= obj.data.length)
+		{
+			return obj.data[obj.length]
+		}
+		return null;
+	}
+	
+	obj.Delete = function(pos)
+	{
+		if ( pos > obj.length - 1)
+			return;
+			
+		if ( pos == obj.length - 1)
+		{
+			obj.length--;
+		}
+		else
+		{
+			// swap with the last item in the collection
+			var temp = obj.data[pos];
+			obj.data[pos] = obj.data[obj.length-1];
+			obj.data[obj.length-1] = temp;
+			obj.length--;
+		}
+	}
+	
+	return obj;
+}
+
+// last piece of code is to start the game
+init();
+</script>
+</body>
+</html>
