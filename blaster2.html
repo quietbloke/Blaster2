@@ -59,8 +59,14 @@ var posX = 400;
 var posY = 200;
 var rotate = 0;
 
-var gameWidth = 1280;
+var screenWidth = 1280;
+var screenHeight = 768;
+var gameWidth = 1280 * 4;
 var gameHeight = 768;
+var gameXMax  =  gameWidth/2;
+var gameXMin  =  -gameXMax;
+var gameYMax  =  gameHeight/2;
+var gameYMin  =  -gameYMax;
 
 var entities = {};	// Entities exists in layers
 var systems = {};
@@ -86,8 +92,8 @@ init = function()
 	canvas = document.getElementById('myCanvas');
 	if (canvas.getContext)
 	{
-		canvas.width = gameWidth;
-		canvas.height = gameHeight;
+		canvas.width = screenWidth;
+		canvas.height = screenHeight;
 
 		// when the window resizes we want to resize the canvas
 		window.onresize = function() { doResize(); };
@@ -101,6 +107,8 @@ init = function()
 		// set timer to game main function
 		ctx = canvas.getContext('2d');
 
+		ctx.translate(screenWidth/2, screenHeight/2);
+		
 		entities = QuickCollection();
 		entities[0] = QuickCollection();
 		entities[1] = QuickCollection();
@@ -109,15 +117,15 @@ init = function()
 		entities[8] = QuickCollection();
 		
 		// create some random enemies
-		for ( var l = 0; l < 100; l++ )
+		for ( var l = 0; l < 40; l++ )
 		{
 			if (l % 2)
 			{
-				prefabs.CreateEnemyA(Math.random()*(gameWidth-50) + 25,Math.random()*(gameHeight-50) + 25);
+				prefabs.CreateEnemyA((Math.random()-0.5) * 2 *(gameXMax-100),(Math.random()-0.5) * 2 * (gameYMax-100));
 			}
 			else
 			{
-				prefabs.CreateEnemyB(Math.random()*(gameWidth-50) + 25,Math.random()*(gameHeight-50) + 25);
+				prefabs.CreateEnemyB((Math.random()-0.5)* 2 *(gameXMax-100),(Math.random()-0.5) * 2 * (gameYMax-100));
 			}
 		}
 
@@ -144,12 +152,13 @@ main = function ()
 	// end of fps code
 	
 	ctx.globalAlpha = 0.25;
-	ctx.fillRect(0, 0, gameWidth, gameHeight);
+	ctx.fillRect(-screenWidth/2, -screenHeight/2, screenWidth, screenHeight);
 	ctx.globalAlpha = 1;
 
 	SysPlayer();
 	SysEnemies();
 	SysPhysics();
+	SysCamera();
 	SysRender();
 	SysCollisions();
 	SysDestroyer();
@@ -259,6 +268,11 @@ CompPlayerShot = function ()
 	return {"Name" : "PlayerShot"};
 }
 
+CompCamera = function ()
+{
+	return {"Name" : "Camera"};
+}
+
 CompCollide = function (collisionLayers)
 {
 	return {"Name" : "Collide",
@@ -343,7 +357,21 @@ SysRender = function()
 				}
 				ctx.strokeStyle=e.components["Visible"].Colour;
 				ctx.stroke();
-
+				
+				// and draw the radar version
+				if ( e.components["Player"] != null | e.components["EnemyA"] != null || e.components["EnemyB"] != null)
+				{
+					ctx.beginPath();
+					scrX = pos.x / 10;
+					scrY = pos.y / 10 - screenHeight/2 + 40;
+					ctx.moveTo(scrX,scrY);
+					ctx.lineTo(scrX+4,scrY);
+					ctx.lineTo(scrX+4,scrY+4);
+					ctx.lineTo(scrX,scrY+4);
+					ctx.lineTo(scrX,scrY);
+					ctx.strokeStyle=e.components["Visible"].Colour;
+					ctx.stroke();
+				}
 				// For debug puposes we will draw the bounding box
 	//			var topleft = e.components["Visible"].Topleft;
 	//			var bottomright = e.components["Visible"].Bottomright;
@@ -415,8 +443,61 @@ SysCollisions = function()
 	}
 }
 
+SysCamera = function()
+{
+	var cameraPosX;
+	var cameraPosY;
+	// find first camera entity with a position
+	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	{
+		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
+		{
+			var e = entities[layer].data[eIdx];
+			if (e && e.components["Camera"] && e.components["Position"])
+			{
+				cameraPosX = e.components["Position"].Position.x + e.components["Physics"].Velocity.x * 50;
+				cameraPosY = 0; //e.components["Position"].Position.y;
+			}
+		}
+	}
+	
+	if ( cameraPosX == null)
+		return;
+		
+	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	{
+		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
+		{
+			var e = entities[layer].data[eIdx];
+			if (e && e.components["Position"])
+			{
+				var pos = e.components["Position"].Position;
+				
+				pos.x = pos.x - cameraPosX;
+				pos.y = pos.y - cameraPosY;
+			}
+		}
+	}
+}
+
 SysPhysics = function()
 {
+	var cameraPosX = 0;
+	var cameraPosY = 0;
+	// find first camera entity with a position
+	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
+	{
+		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
+		{
+			var e = entities[layer].data[eIdx];
+			if (e && e.components["Camera"] && e.components["Position"])
+			{
+				cameraPosX = e.components["Position"].Position.x;
+				cameraPosY = e.components["Position"].Position.y;
+			}
+		}
+	}
+	
 	for ( var layer = 0; layer < LAYER_LAST_LAYER; layer == 0 ? layer = 1 : layer = layer << 1)
 	{
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
@@ -459,32 +540,56 @@ SysPhysics = function()
 	
 	function HandleScreenWrap(pos)
 	{
-		if ( pos.x <= 0 )
+		if ( pos.x <= gameXMin )
 			pos.x += gameWidth;
 
-		if ( pos.x >= gameWidth-1 )
+		if ( pos.x >= gameXMax-1 )
 			pos.x -= gameWidth;
 
-		if ( pos.y <= 0 )
+		if ( pos.y <= gameYMin )
 			pos.y += gameHeight;
 
-		if ( pos.y >= gameHeight-1 )
+		if ( pos.y >= gameYMax-1 )
 			pos.y -= gameHeight;
 	}
 	
 	function HandleScreenBounce(pos, vel)
 	{
-		if ( pos.x <= 0 && vel.x < 0 )
-			vel.x = -vel.x;
+		if ( pos.x <= gameXMin ) 
+		{
+			if ( vel.x < 0 )
+			{
+				vel.x = -vel.x;
+			}
+			pos.x = gameXMin;
+		}
 
-		if ( pos.x >= gameWidth-1 && vel.x > 0  )
-			vel.x = -vel.x;
+		if ( pos.x >= gameXMax-1 ) 
+		{
+			if ( vel.x > 0  )
+			{
+				vel.x = -vel.x;
+			}
+			pos.x = gameXMax;
+		}
 
-		if ( pos.y <= 0 && vel.y < 0 )
-			vel.y = -vel.y;
+		if ( pos.y <= gameYMin ) 
+		{
+			if ( vel.y < 0 )
+			{
+				vel.y = -vel.y;
+			}
+			pos.y = gameYMin;
+		}
 
-		if ( pos.y >= gameHeight-1 && vel.y > 0)
-			vel.y = -vel.y;
+		if ( pos.y >= gameYMax-1 ) 
+		{
+			if ( vel.y > 0)
+			{
+				vel.y = -vel.y;
+			}
+			pos.y = gameYMax;
+		}
 	}
 }
 
@@ -575,7 +680,7 @@ SysPlayer = function()
 			{
 				var direction = Vector ( Math.cos(rotation), Math.sin(rotation));
 				var shotpos = Vector(pos.x + direction.x * 10, pos.y + direction.y * 10);
-				direction.SetMagnitude(4);
+				direction.SetMagnitude(12);
 				CreateShot(shotpos, direction, rotation);
 				keys.ShotElapsedTime = 0;
 			}
@@ -936,6 +1041,7 @@ function PrefabManager()
 			entity.AddComponent(CompScreenBounce());
 			entity.AddComponent(CompCollide());
 			entity.AddComponent(CompPrefab("Player"));
+			entity.AddComponent(CompCamera());
 		}
 		
 		ec = entity.components.Prefab;
@@ -944,17 +1050,17 @@ function PrefabManager()
 		
 
 		var ec = entity.components.Position;
-		ec.Position.x = 200;
-		ec.Position.y = 200;
+		ec.Position.x = 0;
+		ec.Position.y = 0;
 		ec.Rotation = 0;
 
 		ec = entity.components.Physics
 		ec.Velocity.x = 0;
 		ec.Velocity.y = 0;
-		ec.Acceleration = .5;
+		ec.Acceleration = .1;
 		ec.Drag = .99;
 		ec.Rotatespeed = Math.PI/50;
-		ec.Maxvelocity = 2;
+		ec.Maxvelocity = 8;
 
 		ec = entity.components.Visible;
 		ec.Drawdata = shipData;
@@ -1076,15 +1182,15 @@ function PrefabManager()
 			entity.AddComponent(CompPosition());
 			entity.AddComponent(CompPhysics());
 			entity.AddComponent(CompScreenBounce());
-			entity.AddComponent(CompEnemyA());
-
+			entity.AddComponent(CompEnemyB());
+			
 			entity.AddComponent(CompCollide(LAYER_PLAYER | LAYER_PLAYER_SHOT));
 			entity.AddComponent(CompVisible(enemyData,colour,LAYER_ENEMY));
 			entity.AddComponent(CompPrefab("EnemyB"));
 		}
 
 		ec = entity.components.Prefab;
-//		ec.Type = "EnemyB";
+		ec.Type = "EnemyB";
 		ec.Position = EnemyA.length;
 		
 		var ec = entity.components.Position;
@@ -1095,7 +1201,7 @@ function PrefabManager()
 		ec = entity.components.Physics
 		ec.Velocity.x = (Math.random()-.5)*4;
 		ec.Velocity.y = (Math.random()-.5)*4;
-		ec.Acceleration = 1;
+		ec.Acceleration = .1;
 		ec.Drag = 1;
 
 		ec = entity.components.Visible;
