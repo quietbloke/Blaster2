@@ -83,7 +83,26 @@ var LAYER_ENEMY_SHOT = 16;
 var LAYER_HUD = 32;
 var LAYER_LAST_LAYER = 32;
 
+var PREFAB_PLAYERS = 0;
+var PREFAB_PARTICLES = 1;
+var PREFAB_PLAYERSHOTS = 2;
+var PREFAB_ENEMYA = 3;
+var PREFAB_ENEMYB = 4;
+var PREFAB_POWERUPS = 5;
+var PREFAB_RADARHUD = 6;
+var PREFAB_SPAWNER = 7;
+var PREFAB_LAST = 7;
+
 var prefabs = PrefabManager();
+
+var FPS = 50;
+
+var previousTime = (new Date).getTime();
+var timerElasped = 0;
+var timerOverflow = 0;
+var expectedTimeSpan = Math.floor(1000/FPS);
+
+
 
 init = function()
 {
@@ -100,7 +119,7 @@ init = function()
 		window.onresize = function() { doResize(); };
 		doResize();
 
-//		BuildSounds();
+		BuildSounds();
 
 		document.addEventListener("keydown", function (e) { keystate[e.keyCode] = 1;} );
 		document.addEventListener("keyup", function (e) { keystate[e.keyCode] = 0; });	
@@ -118,12 +137,12 @@ init = function()
 		
 		prefabs.CreatePlayer(37,39,38,90);
 
-		prefabs.CreateSpawner(-screenWidth/2+50,0,40,"EnemyA");
-		prefabs.CreateSpawner(screenWidth/2-50,0,60, "EnemyB");
+		prefabs.CreateSpawner(-screenWidth/2+50,0,10,"EnemyA");
+		prefabs.CreateSpawner(screenWidth/2-50,0,10, "EnemyB");
 		
 		prefabs.CreateRadarHud();
 		
-		timerId = setInterval ( main, Math.floor(1000/50));
+		timerId = setInterval ( main, Math.floor(1000/FPS));
 	}
 }
 
@@ -143,16 +162,40 @@ main = function ()
 	l.textContent = fpsText;
 	// end of fps code
 	
+	// Time since we were last called
+	timeElapsed = dwCurrentTime - previousTime + timerOverflow;
+	
+	// figure out how many update frames we should do 
+	var updates = Math.floor(timeElapsed / expectedTimeSpan );
+	previousTime = dwCurrentTime;
+
+	timerOverflow = timeElapsed - (updates * expectedTimeSpan);
+	
+	// if the machine really cant handle it then 
+	// give up and show then a slowed down game
+	if ( updates > 4 ) 
+	{
+		updates = 4;
+		timerOverflow = 0;
+		console.log("Max frame updates exceeded");
+	}
+	
+	for ( var l = 0; l < updates; l++)
+	{
+		SysCollisions();
+		SysPhysics();
+		SysPlayer();
+		SysEnemies();
+		SysCamera();
+		SysDestroyer();
+	}
+	
+	
+	// and finally do a render
 	ctx.globalAlpha = 0.75;
 	ctx.fillRect(-screenWidth/2, -screenHeight/2, screenWidth, screenHeight);
 	ctx.globalAlpha = 1;
 
-	SysCollisions();
-	SysPhysics();
-	SysPlayer();
-	SysEnemies();
-	SysCamera();
-	SysDestroyer();
 	SysRender();
 }
 
@@ -208,13 +251,12 @@ CompVisible = function (drawData,colour,layer)
 		"Bottomright" : bottomright};
 }
 
-CompPhysics = function (xvel, yvel, acceleration, drag, rotatespeed, maxvelocity)
+CompPhysics = function (xvel, yvel, acceleration, drag, maxvelocity)
 {
 	return {"Name" : "Physics", 
 		"Velocity" : new Vector(xvel,yvel), 
 		"Acceleration" : acceleration, 
 		"Drag" : drag,
-///		"Rotatespeed" : rotatespeed,
 		"Maxvelocity" : maxvelocity};
 }
 
@@ -360,28 +402,30 @@ SysRender = function()
 				bottomright.y -= 2;
 
 				// now draw the shape
-				ctx.beginPath();
-				
-				var scrX = pos.x;
-				var scrY = pos.y;
-			
-				for ( var pIdx = 0; pIdx < rotated.length; pIdx++)
+				if ( pos.x + bottomright.x > -screenWidth/2 || pos.x + topleft.x < screenWidth/2)
 				{
-					var p = rotated[pIdx];
-					scrX = pos.x + p[1];
-					scrY = pos.y + p[2];
-					if ( p[0] == 'M')
-					{
-						ctx.moveTo(scrX,scrY);
-					}
-					else
-					{
-						ctx.lineTo(scrX,scrY);
-					}
-				}
-				ctx.strokeStyle=e.components["Visible"].Colour;
-				ctx.stroke();
+					ctx.beginPath();
+					
+					var scrX = pos.x;
+					var scrY = pos.y;
 				
+					for ( var pIdx = 0; pIdx < rotated.length; pIdx++)
+					{
+						var p = rotated[pIdx];
+						scrX = pos.x + p[1];
+						scrY = pos.y + p[2];
+						if ( p[0] == 'M')
+						{
+							ctx.moveTo(scrX,scrY);
+						}
+						else
+						{
+							ctx.lineTo(scrX,scrY);
+						}
+					}
+					ctx.strokeStyle=e.components["Visible"].Colour;
+					ctx.stroke();
+				}
 				// and draw the radar version
 				if ( e.components["Radar"] )
 				{
@@ -429,36 +473,39 @@ SysCollisions = function()
 
 				for ( var layer2 = 0; layer2 <= LAYER_LAST_LAYER; layer2 == 0 ? layer2 = 1 : layer2 = layer2 << 1)
 				{
-					for ( var eIdx2=entities[layer2].length-1; eIdx2 >= 0; eIdx2--)
+					if ( layer2 & e.components["Collide"].Collisionlayers )
 					{
-						var e2 = entities[layer2].data[eIdx2];
-						if (e2 && e2.components["Position"] && e2.components["Visible"] && e2.components["Collide"] ) //&& e2.components["Collide"].Collided == false )
+						for ( var eIdx2=entities[layer2].length-1; eIdx2 >= 0; eIdx2--)
 						{
-							var e1CanCollide = false;
-							var e2CanCollide = false;
-							if ( e2.components["Visible"].Layer & e.components["Collide"].Collisionlayers)
-								e1CanCollide = true;
-							if ( e.components["Visible"].Layer & e2.components["Collide"].Collisionlayers)
-								e2CanCollide = true;
-
-							if ( e1CanCollide || e2CanCollide )
+							var e2 = entities[layer2].data[eIdx2];
+							if (e2 && e2.components["Position"] && e2.components["Visible"] && e2.components["Collide"] ) //&& e2.components["Collide"].Collided == false )
 							{
-								var topleft2 = e2.components["Visible"].Topleft;
-								var bottomright2 = e2.components["Visible"].Bottomright;
-								var pos2 = e2.components["Position"].Position;
-								// see if this other entity has collided with us
-								// Note this is all terribly inneficient but is 
-								// ok for a small amount of sprites
+								var e1CanCollide = false;
+	//							var e2CanCollide = false;
+								if ( e2.components["Visible"].Layer & e.components["Collide"].Collisionlayers)
+									e1CanCollide = true;
+	//							if ( e.components["Visible"].Layer & e2.components["Collide"].Collisionlayers)
+	//								e2CanCollide = true;
 
-								if ( pos.x + topleft.x < pos2.x + bottomright2.x
-									&& pos.x + bottomright.x > pos2.x + topleft2.x
-									&& pos.y + topleft.x < pos2.y + bottomright2.y
-									&& pos.y + bottomright.y > pos2.y + topleft2.y)
+								if ( e1CanCollide ) // || e2CanCollide )
 								{
-									if ( e1CanCollide)
-										e.components["Collide"].Collided = true;
-									if ( e2CanCollide)
-										e2.components["Collide"].Collided = true;
+									var topleft2 = e2.components["Visible"].Topleft;
+									var bottomright2 = e2.components["Visible"].Bottomright;
+									var pos2 = e2.components["Position"].Position;
+									// see if this other entity has collided with us
+									// Note this is all terribly inneficient but is 
+									// ok for a small amount of sprites
+
+									if ( pos.x + topleft.x < pos2.x + bottomright2.x
+										&& pos.x + bottomright.x > pos2.x + topleft2.x
+										&& pos.y + topleft.x < pos2.y + bottomright2.y
+										&& pos.y + bottomright.y > pos2.y + topleft2.y)
+									{
+	//									if ( e1CanCollide)
+											e.components["Collide"].Collided = true;
+	//									if ( e2CanCollide)
+	//										e2.components["Collide"].Collided = true;
+									}
 								}
 							}
 						}
@@ -604,7 +651,7 @@ SysPhysics = function()
 			{
 				vel.x = -vel.x;
 			}
-			pos.x = gameXMax;
+			pos.x = gameXMax-1;
 		}
 
 		if ( pos.y <= gameYMin ) 
@@ -622,7 +669,7 @@ SysPhysics = function()
 			{
 				vel.y = -vel.y;
 			}
-			pos.y = gameYMax;
+			pos.y = gameYMax-1;
 		}
 	}
 }
@@ -656,7 +703,7 @@ SysEnemies = function()
 		{
 			var spawner = e.components["Spawner"];
 			spawner.ElapsedTime++;
-			if ( prefabs.Count(spawner.SpawnPrefabType) < 50)
+			if ( prefabs.Count(spawner.SpawnPrefabType) < 150)
 			{
 				if ( spawner.ElapsedTime > spawner.SpawnRate)
 				{
@@ -738,6 +785,7 @@ SysEnemies = function()
 			if ( e.components["Collide"].Collided)
 			{
 				e.components["Collide"].Destroy = true;
+				PlaySound(1);
 			}
 		}
 	}
@@ -751,6 +799,7 @@ SysEnemies = function()
 				e.components["Collide"].Destroy = true;
 				CreateExplosion(e.components["Position"].Position, e.components["Visible"].Colour);
 				prefabs.CreatePowerUp(e.components["Position"].Position.x,e.components["Position"].Position.y,0,0);
+				PlaySound(2);
 			}
 		}
 	}
@@ -759,7 +808,13 @@ SysEnemies = function()
 	{
 		for ( var p = 0; p < 50; p++)
 		{
-			prefabs.CreateParticle(pos.x,pos.y,(Math.random()-.5)*2,(Math.random()-.5)*2,colour);
+			var angle = Math.random() * Math.PI * 2;
+			var speed = Math.random() * .3 + 2;
+			var xvel = speed * Math.sin(angle);
+			var yvel = speed * Math.cos(angle);
+		
+//			prefabs.CreateParticle(pos.x,pos.y,(Math.random()-.5)*2,(Math.random()-.5)*2,colour);
+			prefabs.CreateParticle(pos.x,pos.y,xvel,yvel,colour);
 		}
 	}
 }
@@ -772,7 +827,7 @@ SysPlayer = function()
 		{
 			if ( component.Collided)
 			{
-				console.log("powerup");
+//				console.log("powerup");
 				component.Collided = false;
 			}
 		}
@@ -825,6 +880,7 @@ SysPlayer = function()
 					direction.SetMagnitude(12);
 					CreateShot(shotpos, direction, rotation);
 					player.ShotElapsedTime = 0;
+					PlaySound(0);
 				}
 				
 				e.components["Rotation"].Rotation = rotation;
@@ -948,16 +1004,16 @@ Vector = function(x,y)
 BuildSounds = function ()
 {
 	// player shot
-	audio[0] = CreateSound(3000,2800,1000,200,.8,0,1,1);
+	audio[0] = CreateSound(2000,200,0,500,.5,0,.5,.15);
 	// player explode
-	audio[1] = CreateSound(600,600,800,200,.5,0,2,2);
+	audio[1] = CreateSound(7000,4000,0,0,1,0,0.25,.125);
 	// invader move
-	audio[2] = CreateSound(300,300,2000,150,.5,0.0,.2,.2);
-	audio[3] = CreateSound(200,200,2000,150,.5,0.0,.2,.2);
-	audio[4] = CreateSound(250,250,2000,150,.5,0.0,.2,.2);
-	audio[5] = CreateSound(200,200,2000,150,.5,0.0,.2,.2);
+//	audio[2] = CreateSound(300,300,2000,150,.5,0.0,.2,.2);
+//	audio[3] = CreateSound(200,200,2000,150,.5,0.0,.2,.2);
+//	audio[4] = CreateSound(250,250,2000,150,.5,0.0,.2,.2);
+//	audio[5] = CreateSound(200,200,2000,150,.5,0.0,.2,.2);
 	// invader explode
-	audio[6] = CreateSound(200,2000,1000,100,.5,0.0,.3,.1);
+	audio[2] = CreateSound(100,0,4000,100,1,0.0,.75,.75);
 }
 
 CreateSound = function ( startFreq, endFreq, noiseFreq, noiseFreqAdj, startVol, endVol, duration, freqDuration)
@@ -1166,14 +1222,21 @@ var QBSound = new function()
 function PrefabManager()
 {
 	var obj = {};
-	var players = QuickCollection();
-	var particles = QuickCollection();
-	var playerShots = QuickCollection();
-	var EnemyA = QuickCollection();
-	var EnemyB = QuickCollection();
-	var PowerUps = QuickCollection();
-	var RadarHud = QuickCollection();
-	var Spawner = QuickCollection();
+	
+	var collections = new Array();
+	for ( var c = 0; c <= PREFAB_LAST; c++ )
+	{
+		collections[c] = QuickCollection();
+	}
+	
+	var players = collections[PREFAB_PLAYERS];
+	var particles = collections[PREFAB_PARTICLES];
+	var playerShots = collections[PREFAB_PLAYERSHOTS];
+	var EnemyA = collections[PREFAB_ENEMYA];
+	var EnemyB = collections[PREFAB_ENEMYB];
+	var PowerUps = collections[PREFAB_POWERUPS];
+	var RadarHud = collections[PREFAB_RADARHUD];
+	var Spawner = collections[PREFAB_SPAWNER];
 
 	obj.Count = function(type)
 	{
@@ -1196,7 +1259,7 @@ function PrefabManager()
 			
 			entity.AddComponent(CompScreenBounce());
 			entity.AddComponent(CompCollide(LAYER_POWER_UP));
-			entity.AddComponent(CompPrefab("Player"));
+			entity.AddComponent(CompPrefab(PREFAB_PLAYERS));
 			entity.AddComponent(CompCamera());
 			entity.AddComponent(CompGamePos());
 			entity.AddComponent(CompRadar());
@@ -1204,7 +1267,7 @@ function PrefabManager()
 		}
 		
 		ec = entity.components.Prefab;
-		ec.Type = "Player";
+//		ec.Type = "Player";
 		ec.Position = players.length;
 		
 
@@ -1251,7 +1314,7 @@ function PrefabManager()
 			entity.AddComponent(CompLifeSpan());
 			entity.AddComponent(CompVisible());
 			entity.AddComponent(CompVisible(explosionData,colour,0));
-			entity.AddComponent(CompPrefab("Particle"));
+			entity.AddComponent(CompPrefab(PREFAB_PARTICLES));
 			entity.AddComponent(CompGamePos());
 			
 			console.log("Creating particle");
@@ -1302,14 +1365,13 @@ function PrefabManager()
 
 			entity.AddComponent(CompCollide(LAYER_PLAYER | LAYER_PLAYER_SHOT));
 			entity.AddComponent(CompVisible(enemyData,colour,LAYER_ENEMY));
-			entity.AddComponent(CompPrefab("EnemyA"));
+			entity.AddComponent(CompPrefab(PREFAB_ENEMYA));
 			entity.AddComponent(CompGamePos());
 			entity.AddComponent(CompRadar());
 			entity.AddComponent(CompRotation());
 		}
 
 		ec = entity.components.Prefab;
-//		ec.Type = "EnemyA";
 		ec.Position = EnemyA.length;
 		
 		var ec = entity.components.Position;
@@ -1356,12 +1418,11 @@ function PrefabManager()
 			
 			entity.AddComponent(CompCollide(LAYER_PLAYER | LAYER_PLAYER_SHOT));
 			entity.AddComponent(CompVisible(enemyData,colour,LAYER_ENEMY));
-			entity.AddComponent(CompPrefab("EnemyB"));
+			entity.AddComponent(CompPrefab(PREFAB_ENEMYB));
 			entity.AddComponent(CompRadar());
 		}
 
 		ec = entity.components.Prefab;
-//		ec.Type = "EnemyB";
 		ec.Position = EnemyB.length;
 		
 		var ec = entity.components.Position;
@@ -1404,7 +1465,7 @@ function PrefabManager()
 			entity.AddComponent(CompVisible(playerShotData,"White",LAYER_PLAYER_SHOT));
 			entity.AddComponent(CompCollide(LAYER_ENEMY));
 			entity.AddComponent(CompPlayerShot());
-			entity.AddComponent(CompPrefab("PlayerShot"));
+			entity.AddComponent(CompPrefab(PREFAB_PLAYERSHOTS));
 //			entity.AddComponent(CompGamePos());
 			entity.AddComponent(CompRotation());
 
@@ -1412,7 +1473,6 @@ function PrefabManager()
 		}
 
 		ec = entity.components.Prefab;
-//		ec.Type = "PlayerShot";
 		ec.Position = playerShots.length;
 		
 		var ec = entity.components.Position;
@@ -1459,7 +1519,7 @@ function PrefabManager()
 			entity.AddComponent(CompVisible(powerUpData,"Cyan",LAYER_POWER_UP));
 			entity.AddComponent(CompCollide(LAYER_PLAYER));
 			entity.AddComponent(CompPowerUp());
-			entity.AddComponent(CompPrefab("PowerUp"));
+			entity.AddComponent(CompPrefab(PREFAB_POWERUPS));
 			entity.AddComponent(CompGamePos());
 			entity.AddComponent(CompRotation());
 		}
@@ -1504,7 +1564,7 @@ function PrefabManager()
 			var entity = Entity();
 			entity.AddComponent(CompPosition());
 			entity.AddComponent(CompVisible());
-			entity.AddComponent(CompPrefab("RadarHud"));
+			entity.AddComponent(CompPrefab(PREFAB_RADARHUD));
 		}
 
 		var ec = entity.components.Position;
@@ -1530,7 +1590,7 @@ function PrefabManager()
 			var entity = Entity();
 			entity.AddComponent(CompPosition());
 			entity.AddComponent(CompSpawner());
-			entity.AddComponent(CompPrefab("Spawner"));
+			entity.AddComponent(CompPrefab(PREFAB_SPAWNER));
 		}
 
 		var ec = entity.components.Position;
@@ -1550,72 +1610,15 @@ function PrefabManager()
 	
 	obj.Delete = function(type, position)
 	{
-		if ( type == "Particle")
+		var collection = collections[type];
+		if ( collection.length > 1)
 		{
-			// Bit of a Hack
-			// we need to repoint the last entity prefab entry to contain the position
-			// of the one we are deleting ( as that is where it will end up after the delete )
-			if ( particles.length > 1)
-			{
-				particles.data[particles.length-1].components.Prefab.Position = position;
-			}
-			particles.Delete(position);
+//			// Bit of a Hack
+//			// we need to repoint the last entity prefab entry to contain the position
+//			// of the one we are deleting ( as that is where it will end up after the delete )
+			collection.data[collection.length-1].components.Prefab.Position = position;
 		}
-		if ( type == "PlayerShot")
-		{
-			// Bit of a Hack
-			// we need to repoint the last entity prefab entry to contain the position
-			// of the one we are deleting ( as that is where it will end up after the delete )
-			if ( playerShots.length > 1)
-			{
-				playerShots.data[playerShots.length-1].components.Prefab.Position = position;
-			}
-			playerShots.Delete(position);
-		}
-		if ( type == "EnemyA")
-		{
-			// Bit of a Hack
-			// we need to repoint the last entity prefab entry to contain the position
-			// of the one we are deleting ( as that is where it will end up after the delete )
-			if ( EnemyA.length > 1)
-			{
-				EnemyA.data[EnemyA.length-1].components.Prefab.Position = position;
-			}
-			EnemyA.Delete(position);
-		}
-		if ( type == "EnemyB")
-		{
-			// Bit of a Hack
-			// we need to repoint the last entity prefab entry to contain the position
-			// of the one we are deleting ( as that is where it will end up after the delete )
-			if ( EnemyB.length > 1)
-			{
-				EnemyB.data[EnemyB.length-1].components.Prefab.Position = position;
-			}
-			EnemyB.Delete(position);
-		}
-		if ( type == "RadarHud")
-		{
-			// Bit of a Hack
-			// we need to repoint the last entity prefab entry to contain the position
-			// of the one we are deleting ( as that is where it will end up after the delete )
-			if ( RadarHud.length > 1)
-			{
-				RadarHud.data[RadarHud.length-1].components.Prefab.Position = position;
-			}
-			RadarHud.Delete(position);
-		}
-		if ( type == "Spawner")
-		{
-			// Bit of a Hack
-			// we need to repoint the last entity prefab entry to contain the position
-			// of the one we are deleting ( as that is where it will end up after the delete )
-			if ( Spawner.length > 1)
-			{
-				Spawner.data[Spawner.length-1].components.Prefab.Position = position;
-			}
-			Spawner.Delete(position);
-		}
+		collection.Delete(position);
 	}
 	
 	return obj;
