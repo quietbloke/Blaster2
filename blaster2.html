@@ -52,14 +52,34 @@ function doResize()
 	canvas.style.marginTop = (scrH-height)/2;
 }
 
-var screenWidth = 1280;
-var screenHeight = 768;
-var gameWidth = screenWidth * 2;
-var gameHeight = screenHeight;
-var gameXMax  =  gameWidth/2;
-var gameXMin  =  -gameXMax;
-var gameYMax  =  gameHeight/2;
-var gameYMin  =  -gameYMax;
+const screenWidth = 1280;
+const screenHeight = 768;
+const gameWidth = screenWidth * 2;
+const gameHeight = screenHeight;
+const gameXMax  =  gameWidth/2;
+const gameXMin  =  -gameXMax;
+const gameYMax  =  gameHeight/2;
+const gameYMin  =  -gameYMax;
+
+const LAYER_PLAYER = 1;
+const LAYER_ENEMY = 2;
+const LAYER_POWER_UP = 4;
+const LAYER_PLAYER_SHOT = 8;
+const LAYER_ENEMY_SHOT = 16;
+const LAYER_HUD = 32;
+const LAYER_LAST_LAYER = 32;
+
+const PREFAB_PLAYERS = 0;
+const PREFAB_PARTICLES = 1;
+const PREFAB_PLAYERSHOTS = 2;
+const PREFAB_ENEMYA = 3;
+const PREFAB_ENEMYB = 4;
+const PREFAB_POWERUPS = 5;
+const PREFAB_RADARHUD = 6;
+const PREFAB_SPAWNER = 7;
+const PREFAB_LAST = 7;
+
+const FPS = 50;
 
 var entities = {};	// Entities exists in layers
 var systems = {};
@@ -75,34 +95,12 @@ var radarBorderData = [["M", gameXMin / 10 - 2, -screenHeight / 10 / 2 - 3],
 	["L", gameXMax / 10+2, -screenHeight/10/2 - 3],
 	["L", gameXMin / 10-2, -screenHeight/10/2 - 3]];
 
-var LAYER_PLAYER = 1;
-var LAYER_ENEMY = 2;
-var LAYER_POWER_UP = 4;
-var LAYER_PLAYER_SHOT = 8;
-var LAYER_ENEMY_SHOT = 16;
-var LAYER_HUD = 32;
-var LAYER_LAST_LAYER = 32;
-
-var PREFAB_PLAYERS = 0;
-var PREFAB_PARTICLES = 1;
-var PREFAB_PLAYERSHOTS = 2;
-var PREFAB_ENEMYA = 3;
-var PREFAB_ENEMYB = 4;
-var PREFAB_POWERUPS = 5;
-var PREFAB_RADARHUD = 6;
-var PREFAB_SPAWNER = 7;
-var PREFAB_LAST = 7;
-
 var prefabs = PrefabManager();
-
-var FPS = 50;
 
 var previousTime = (new Date).getTime();
 var timerElasped = 0;
 var timerOverflow = 0;
 var expectedTimeSpan = Math.floor(1000/FPS);
-
-
 
 init = function()
 {
@@ -223,6 +221,24 @@ Entity = function()
 
 // components have a name and can contain a block of data
 // For the moment all components are prefixed with Comp
+
+const COMP_POSITION = 0;
+const COMP_ROTATION = 1;
+const COMP_VISIBLE = 2;
+const COMP_PHYSICS = 3;
+const COMP_PLAYER = 4;
+const COMP_LIFESPAN = 5;
+const COMP_SCREENWRAP = 6;
+const COMP_SCREENBOUNCE = 7;
+const COMP_ENEMYA = 8;
+const COMP_ENEMYB = 9;
+const COMP_POWERUP = 10;
+const COMP_PREFAB = 11;
+const COMP_CAMERA = 12;
+const COMP_GAMEPOS = 13;
+const COMP_RADAR = 14;
+const COMP_COLLIDE = 15;
+const COMP_SPAWNER = 16;
 
 CompPosition = function (xpos, ypos)
 {
@@ -355,14 +371,14 @@ SysRender = function()
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
 			var e = entities[layer].data[eIdx];
-			if (e && e.components["Position"] && e.components["Visible"])
+			if (e && e.components.Position && e.components.Visible)
 			{
-				var pos = e.components["Position"].Position;
-				var data = e.components["Visible"].Drawdata;
+				var pos = e.components.Position.Position;
+				var data = e.components.Visible.Drawdata;
 				var rotated = data;
-				if ( e.components["Rotation"])
+				if ( e.components.Rotation)
 				{
-					var rotate = e.components["Rotation"].Rotation;
+					var rotate = e.components.Rotation.Rotation;
 
 					rotated = [];
 					for ( var pIdx = 0; pIdx < data.length; pIdx++)
@@ -377,8 +393,8 @@ SysRender = function()
 				// Don't know if this is the place to do this but
 				// as we have now rotated and are about to draw
 				// we can recalculate the bounding box
-				var topleft = e.components["Visible"].Topleft;
-				var bottomright = e.components["Visible"].Bottomright;
+				var topleft = e.components.Visible.Topleft;
+				var bottomright = e.components.Visible.Bottomright;
 				topleft.x = 0;
 				topleft.y = 0;
 				bottomright.x = 0;
@@ -423,11 +439,11 @@ SysRender = function()
 							ctx.lineTo(scrX,scrY);
 						}
 					}
-					ctx.strokeStyle=e.components["Visible"].Colour;
+					ctx.strokeStyle=e.components.Visible.Colour;
 					ctx.stroke();
 				}
 				// and draw the radar version
-				if ( e.components["Radar"] )
+				if ( e.components.Radar )
 				{
 					ctx.beginPath();
 					scrX = pos.x / 10;
@@ -437,7 +453,7 @@ SysRender = function()
 					ctx.lineTo(scrX+2,scrY+2);
 					ctx.lineTo(scrX-2,scrY+2);
 					ctx.lineTo(scrX-2,scrY-2);
-					ctx.strokeStyle=e.components["Visible"].Colour;
+					ctx.strokeStyle=e.components.Visible.Colour;
 					ctx.stroke();
 				}
 				
@@ -465,47 +481,34 @@ SysCollisions = function()
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
 			var e = entities[layer].data[eIdx];
-			if (e && e.components["Position"] && e.components["Visible"] && e.components["Collide"])
+			if (e && e.components.Position && e.components.Visible && e.components.Collide)
 			{
-				var topleft = e.components["Visible"].Topleft;
-				var bottomright = e.components["Visible"].Bottomright;
-				var pos = e.components["Position"].Position;
+				var topleft = e.components.Visible.Topleft;
+				var bottomright = e.components.Visible.Bottomright;
+				var pos = e.components.Position.Position;
 
 				for ( var layer2 = 0; layer2 <= LAYER_LAST_LAYER; layer2 == 0 ? layer2 = 1 : layer2 = layer2 << 1)
 				{
-					if ( layer2 & e.components["Collide"].Collisionlayers )
+					if ( layer2 & e.components.Collide.Collisionlayers )
 					{
 						for ( var eIdx2=entities[layer2].length-1; eIdx2 >= 0; eIdx2--)
 						{
 							var e2 = entities[layer2].data[eIdx2];
-							if (e2 && e2.components["Position"] && e2.components["Visible"] && e2.components["Collide"] ) //&& e2.components["Collide"].Collided == false )
+							if (e2 && e2.components.Position && e2.components.Visible && e2.components.Collide ) //&& e2.components["Collide"].Collided == false )
 							{
-								var e1CanCollide = false;
-	//							var e2CanCollide = false;
-								if ( e2.components["Visible"].Layer & e.components["Collide"].Collisionlayers)
-									e1CanCollide = true;
-	//							if ( e.components["Visible"].Layer & e2.components["Collide"].Collisionlayers)
-	//								e2CanCollide = true;
+								var topleft2 = e2.components["Visible"].Topleft;
+								var bottomright2 = e2.components["Visible"].Bottomright;
+								var pos2 = e2.components["Position"].Position;
+								// see if this other entity has collided with us
+								// Note this is all terribly inneficient but is 
+								// ok for a small amount of sprites
 
-								if ( e1CanCollide ) // || e2CanCollide )
+								if ( pos.x + topleft.x < pos2.x + bottomright2.x
+									&& pos.x + bottomright.x > pos2.x + topleft2.x
+									&& pos.y + topleft.x < pos2.y + bottomright2.y
+									&& pos.y + bottomright.y > pos2.y + topleft2.y)
 								{
-									var topleft2 = e2.components["Visible"].Topleft;
-									var bottomright2 = e2.components["Visible"].Bottomright;
-									var pos2 = e2.components["Position"].Position;
-									// see if this other entity has collided with us
-									// Note this is all terribly inneficient but is 
-									// ok for a small amount of sprites
-
-									if ( pos.x + topleft.x < pos2.x + bottomright2.x
-										&& pos.x + bottomright.x > pos2.x + topleft2.x
-										&& pos.y + topleft.x < pos2.y + bottomright2.y
-										&& pos.y + bottomright.y > pos2.y + topleft2.y)
-									{
-	//									if ( e1CanCollide)
-											e.components["Collide"].Collided = true;
-	//									if ( e2CanCollide)
-	//										e2.components["Collide"].Collided = true;
-									}
+									e.components.Collide.Collided = true;
 								}
 							}
 						}
@@ -526,9 +529,9 @@ SysCamera = function()
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
 			var e = entities[layer].data[eIdx];
-			if (e && e.components["Camera"] && e.components["Position"])
+			if (e && e.components.Camera && e.components.Position && e.components.Physics)
 			{
-				cameraPosX = e.components["Position"].Position.x + e.components["Physics"].Velocity.x * 50;
+				cameraPosX = e.components.Position.Position.x + e.components.Physics.Velocity.x * 50;
 				cameraPosY = 0; //e.components["Position"].Position.y;
 			}
 		}
@@ -542,9 +545,9 @@ SysCamera = function()
 		for ( var eIdx=entities[layer].length-1; eIdx >= 0; eIdx--)
 		{
 			var e = entities[layer].data[eIdx];
-			if (e && e.components["Position"] &&  e.components["Gamepos"])
+			if (e && e.components.Gamepos && e.components.Position)
 			{
-				var pos = e.components["Position"].Position;
+				var pos = e.components.Position.Position;
 				
 				pos.x = pos.x - cameraPosX;
 				pos.y = pos.y - cameraPosY;
