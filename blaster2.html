@@ -52,16 +52,9 @@ function doResize()
 	canvas.style.marginTop = (scrH-height)/2;
 }
 
-var shipImage
-var velX = 1;
-var velY = 1;
-var posX = 400;
-var posY = 200;
-var rotate = 0;
-
 var screenWidth = 1280;
 var screenHeight = 768;
-var gameWidth = screenWidth * 4;
+var gameWidth = screenWidth * 2;
 var gameHeight = screenHeight;
 var gameXMax  =  gameWidth/2;
 var gameXMin  =  -gameXMax;
@@ -122,20 +115,23 @@ init = function()
 		}
 		
 		// create some random enemies
-		for ( var l = 0; l < 400; l++ )
-		{
-			if (l % 2)
-			{
-				prefabs.CreateEnemyA((Math.random()-0.5) * 2 *(gameXMax-100),(Math.random()-0.5) * 2 * (gameYMax-100));
-			}
-			else
-			{
-				prefabs.CreateEnemyB((Math.random()-0.5)* 2 *(gameXMax-100),(Math.random()-0.5) * 2 * (gameYMax-100));
-			}
-		}
+//		for ( var l = 0; l < 50; l++ )
+//		{
+//			if (l % 2)
+//			{
+//				prefabs.CreateEnemyA((Math.random()-0.5) * 2 *(gameXMax-100),(Math.random()-0.5) * 2 * (gameYMax-100));
+//			}
+//			else
+//			{
+//				prefabs.CreateEnemyB((Math.random()-0.5)* 2 *(gameXMax-100),(Math.random()-0.5) * 2 * (gameYMax-100));
+//			}
+//		}
 
 		prefabs.CreatePlayer(37,39,38,90);
 
+		prefabs.CreateSpawner(-screenWidth/2+50,0,40);
+		prefabs.CreateSpawner(screenWidth/2-50,0,60);
+		
 		prefabs.CreateRadarHud();
 		
 		timerId = setInterval ( main, Math.floor(1000/50));
@@ -265,14 +261,14 @@ CompEnemyA = function ()
 	return {"Name" : "EnemyA" };
 }
 
-CompPrefab = function (type, pos)
-{
-	return {"Name" : "Prefab", "Type" : type, "Position" : pos };
-}
-
 CompEnemyB = function ()
 {
 	return {"Name" : "EnemyB" };
+}
+
+CompPrefab = function (type, pos)
+{
+	return {"Name" : "Prefab", "Type" : type, "Position" : pos };
 }
 
 CompPlayerShot = function ()
@@ -301,6 +297,13 @@ CompCollide = function (collisionLayers)
 		"Collisionlayers" : collisionLayers, 
 		"Collided" : false,
 		"Destroy" : false};
+}
+
+CompSpawner = function(xpos,ypos,spawnRate)
+{
+	return {"Name" : "Spawner",
+		"SpawnRate" : spawnRate, 
+		"ElapsedTime" : 0};
 }
 
 // Systems will perform actions on any entities that contains all the 
@@ -643,6 +646,23 @@ SysEnemies = function()
 				e.components["Rotation"].Rotation = rotation;
 			}
 			CheckCollided(e);
+		}
+		if ( e.components["Spawner"])
+		{
+			var spawner = e.components["Spawner"];
+			spawner.ElapsedTime++;
+			if ( spawner.ElapsedTime > spawner.SpawnRate)
+			{
+				var xpos = 0;
+				var ypos = 0;
+				if (e.components["Position"])
+				{
+					xpos = e.components["Position"].Position.x;
+					ypos = e.components["Position"].Position.y;
+				}
+				spawner.ElapsedTime = 0;
+				prefabs.CreateEnemyA(xpos,ypos);
+			}
 		}
 	}
 	
@@ -1053,6 +1073,7 @@ function PrefabManager()
 	var EnemyA = QuickCollection();
 	var EnemyB = QuickCollection();
 	var RadarHud = QuickCollection();
+	var Spawner = QuickCollection();
 
 	obj.CreatePlayer = function (keyleft, keyright, keyaccelerate, keyshoot)
 	{
@@ -1187,10 +1208,15 @@ function PrefabManager()
 		var ec = entity.components.Position;
 		ec.Position.x = xpos;
 		ec.Position.y = ypos;
-		
+
 		var ec = entity.components.Rotation;
 		ec.Rotation = 0;
+		
+		var ec = entity.components.Rotation;
 
+		ec = entity.components.Collide
+		ec.Collided = false;
+		ec.Destroy = false;
 
 		ec = entity.components.Physics
 		ec.Velocity.x = (Math.random()-.5)*4;
@@ -1236,7 +1262,13 @@ function PrefabManager()
 		var ec = entity.components.Position;
 		ec.Position.x = xpos;
 		ec.Position.y = ypos;
+
+		var ec = entity.components.Rotation;
 		ec.Rotation = 0;
+		
+		ec = entity.components.Collide
+		ec.Collided = false;
+		ec.Destroy = false;
 
 		ec = entity.components.Physics
 		ec.Velocity.x = (Math.random()-.5)*4;
@@ -1324,7 +1356,6 @@ function PrefabManager()
 		var ec = entity.components.Position;
 		ec.Position.x = 0;
 		ec.Position.y = -screenHeight/2 + gameHeight/10/2 + 2;
-		ec.Rotation = 0;
 
 		ec = entity.components.Visible;
 		ec.Drawdata = radarBorderData;
@@ -1333,6 +1364,31 @@ function PrefabManager()
 
 		RadarHud.Insert(entity);
 		entities[LAYER_HUD].Insert(entity);
+
+		return entity;
+	}
+
+	obj.CreateSpawner = function( xpos, ypos, spawnRate)
+	{
+		var entity = Spawner.Reclaim();
+		if ( entity == null )
+		{
+			var entity = Entity();
+			entity.AddComponent(CompPosition());
+			entity.AddComponent(CompSpawner());
+			entity.AddComponent(CompPrefab("Spawner"));
+		}
+
+		var ec = entity.components.Position;
+		ec.Position.x = xpos;
+		ec.Position.y = ypos;
+
+		var ec = entity.components.Spawner;
+		ec.SpawnRate = spawnRate;
+		ec.ElapsedTime = 0;
+
+		Spawner.Insert(entity);
+		entities[LAYER_ENEMY].Insert(entity);
 
 		return entity;
 	}
@@ -1393,6 +1449,17 @@ function PrefabManager()
 				RadarHud.data[RadarHud.length-1].components.Prefab.Position = position;
 			}
 			RadarHud.Delete(position);
+		}
+		if ( type == "Spawner")
+		{
+			// Bit of a Hack
+			// we need to repoint the last entity prefab entry to contain the position
+			// of the one we are deleting ( as that is where it will end up after the delete )
+			if ( Spawner.length > 1)
+			{
+				Spawner.data[Spawner.length-1].components.Prefab.Position = position;
+			}
+			Spawner.Delete(position);
 		}
 	}
 	
