@@ -259,8 +259,18 @@ CompVisible = function (drawData,colour,layer)
 	var topleft = Vector(0,0);
 	var bottomright = Vector(0,0);
 
+	var drawDataTransformed = [];
+	// copy drawdata for transformed data
+	for ( var pIdx = 0; pIdx < drawData.length; pIdx++)
+	{
+		var p = drawData[pIdx];
+		drawDataTransformed[pIdx] = [p[0],p[1], p[2]];
+	}
+
+	
 	return {"Name" : "Visible", 
 		"Drawdata" : drawData,
+		"DrawdataTransformed" : drawDataTransformed,
 		"Colour" : colour,
 		"Layer" : layer,
 		"Topleft" : topleft,
@@ -391,19 +401,18 @@ SysRender = function()
 			{
 				var pos = e.components.Position.Position;
 				var data = e.components.Visible.Drawdata;
-				var rotated = data;
+				var transformedData = e.components.Visible.DrawdataTransformed;
 				if ( e.components.Rotation)
 				{
 					var rotate = e.components.Rotation.Rotation;
-
-					rotated = [];
+//					rotated = [];
 					for ( var pIdx = 0; pIdx < data.length; pIdx++)
 					{
 						var p = data[pIdx];
 						newX = p[1] * Math.cos(rotate) - p[2] * Math.sin(rotate);
 						newY = p[1] * Math.sin(rotate) + p[2] * Math.cos(rotate);
 
-						rotated[pIdx] = [p[0],newX, newY];
+						transformedData[pIdx] = [p[0],newX, newY];
 					}
 				}
 				// Don't know if this is the place to do this but
@@ -416,9 +425,9 @@ SysRender = function()
 				bottomright.x = 0;
 				bottomright.y = 0;
 
-				for ( var pIdx = 0; pIdx < rotated.length; pIdx++)
+				for ( var pIdx = 0; pIdx < transformedData.length; pIdx++)
 				{
-					var p = rotated[pIdx];
+					var p = transformedData[pIdx];
 					if ( p[1] < topleft.x)
 						topleft.x = p[1];
 					if ( p[1] > bottomright.x)
@@ -441,9 +450,9 @@ SysRender = function()
 					var scrX = pos.x;
 					var scrY = pos.y;
 				
-					for ( var pIdx = 0; pIdx < rotated.length; pIdx++)
+					for ( var pIdx = 0; pIdx < transformedData.length; pIdx++)
 					{
-						var p = rotated[pIdx];
+						var p = transformedData[pIdx];
 						scrX = pos.x + p[1];
 						scrY = pos.y + p[2];
 						if ( p[0] == 'M')
@@ -711,7 +720,7 @@ SysEnemies = function()
 		{
 			var spawner = e.components.Spawner;
 			spawner.ElapsedTime++;
-			if ( prefabs.Count(spawner.SpawnPrefabType) < 150)
+			if ( prefabs.Count(spawner.SpawnPrefabType) < 100)
 			{
 				if ( spawner.ElapsedTime > spawner.SpawnRate)
 				{
@@ -817,7 +826,7 @@ SysEnemies = function()
 		for ( var p = 0; p < 50; p++)
 		{
 			var angle = Math.random() * Math.PI * 2;
-			var speed = Math.random() * .3 + 2;
+			var speed = Math.random() * .5 + 1.5;
 			var xvel = speed * Math.sin(angle);
 			var yvel = speed * Math.cos(angle);
 		
@@ -1256,7 +1265,7 @@ function PrefabManager()
 			entity = Entity();
 			entity.AddComponent(CompPosition());
 			entity.AddComponent(CompPhysics()); 
-			entity.AddComponent(CompVisible());
+			entity.AddComponent(CompVisible(shipData,"White",LAYER_PLAYER));
 			entity.AddComponent(CompPlayer());
 			
 			entity.AddComponent(CompScreenBounce());
@@ -1288,10 +1297,11 @@ function PrefabManager()
 //		ec.Rotatespeed = Math.PI/50;
 		ec.Maxvelocity = 8;
 
-		ec = entity.components.Visible;
-		ec.Drawdata = shipData;
-		ec.Colour = "White";
-		ec.Layer = LAYER_PLAYER;
+//		ec = entity.components.Visible;
+//		ec.Drawdata = shipData;
+//		ec.DrawdataTransformed = shipData;
+//		ec.Colour = "White";
+//		ec.Layer = LAYER_PLAYER;
 
 		ec = entity.components.Player;
 		ec.KeyLeft = keyleft;
@@ -1314,7 +1324,6 @@ function PrefabManager()
 			entity.AddComponent(CompPosition());
 			entity.AddComponent(CompPhysics());
 			entity.AddComponent(CompLifeSpan());
-			entity.AddComponent(CompVisible());
 			entity.AddComponent(CompVisible(explosionData,colour,0));
 			entity.AddComponent(CompPrefab(PREFAB_PARTICLES));
 			entity.AddComponent(CompGamePos());
@@ -1565,7 +1574,7 @@ function PrefabManager()
 		{
 			var entity = Entity();
 			entity.AddComponent(CompPosition());
-			entity.AddComponent(CompVisible());
+			entity.AddComponent(CompVisible(radarBorderData,"White",LAYER_HUD));
 			entity.AddComponent(CompPrefab(PREFAB_RADARHUD));
 		}
 
@@ -1573,9 +1582,9 @@ function PrefabManager()
 		ec.Position.x = 0;
 		ec.Position.y = -SCREEN_HEIGHT/2 + GAME_HEIGHT/20 + 2;
 		ec = entity.components.Visible;
-		ec.Drawdata = radarBorderData;
-		ec.Colour = "White";
-		ec.Layer = LAYER_HUD;
+//		ec.Drawdata = radarBorderData;
+//		ec.Colour = "White";
+//		ec.Layer = LAYER_HUD;
 
 		RadarHud.Insert(entity);
 		entities[LAYER_HUD].Insert(entity);
