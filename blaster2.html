@@ -169,8 +169,9 @@ init = function()
 		
 		prefabs.CreatePlayer(37,39,38,90);
 
-		prefabs.CreateSpawner(-SCREEN_WIDTH/2+50,0,20,"SwarmA");
-//		prefabs.CreateSpawner(SCREEN_WIDTH/2-50,0,10, "EnemyB");
+		prefabs.CreateSpawner(-GAME_WIDTH/2,0,125,"SwarmA", 14);
+		prefabs.CreateSpawner(GAME_WIDTH/2,0,40,"EnemyB", 50);
+		prefabs.CreateSpawner(-GAME_WIDTH/2,0,40, "EnemyA", 50);
 		
 		prefabs.CreateRadarHud();
 		
@@ -233,9 +234,9 @@ main = function ()
 		for ( var f = 0; f < frames; f++)
 		{
 			SysCollisions();
-			SysPhysics();
 			SysPlayer();
 			SysEnemies();
+			SysPhysics();
 			SysCamera();
 			SysDestroyer();
 		}
@@ -402,11 +403,12 @@ CompCollide = function (collisionLayers)
 		"Destroy" : false};
 }
 
-CompSpawner = function(xpos,ypos,spawnRate, prefabType)
+CompSpawner = function(xpos,ypos,spawnRate, prefabType, spawnMax)
 {
 	return {"Name" : "Spawner",
 		"SpawnRate" : spawnRate, 
 		"SpawnPrefab" : prefabType,
+		"SpawnMax" : spawnMax,
 		"ElapsedTime" : 0};
 }
 
@@ -765,7 +767,7 @@ SysEnemies = function()
 	for ( var eIdx=entities[LAYER_ENEMY].length-1; eIdx >= 0; eIdx--)
 	{
 		var e = entities[LAYER_ENEMY].data[eIdx];
-		if (e && ( e.components.EnemyA || e.components.EnemyB ) )
+		if (e && ( e.components.EnemyA || e.components.EnemyB || e.components.EnemyTeamMember) )
 		{
 			CheckCollided(e);
 		}
@@ -774,7 +776,7 @@ SysEnemies = function()
 		{
 			var spawner = e.components.Spawner;
 			spawner.ElapsedTime++;
-			if ( prefabs.Count(spawner.SpawnPrefabType) < 50)
+			if ( prefabs.Count(spawner.SpawnPrefabType) <= spawner.SpawnMax)
 			{
 				if ( spawner.ElapsedTime > spawner.SpawnRate)
 				{
@@ -798,15 +800,31 @@ SysEnemies = function()
 		
 		if ( e.components.EnemyTeamLeader)
 		{
+			if ( e.components.EnemyTeamLeader.TeamMembers.length == 0)
+			{
+				e.components.Collide.Destroy = true;
+			}
+			
 			e.components.Position.Position.y += Math.cos(e.components.EnemyTeamLeader.YPosAngleOffset)*2;
 			e.components.EnemyTeamLeader.YPosAngleOffset += Math.PI/50;
 			// Set the world positions of the members
 			// relate to our position
-			for ( var mIdx = 0; mIdx < e.components.EnemyTeamLeader.TeamMembers.length; mIdx++)
+			for ( var mIdx = e.components.EnemyTeamLeader.TeamMembers.length - 1; mIdx >= 0; mIdx--)
 			{
 				var m = e.components.EnemyTeamLeader.TeamMembers.data[mIdx];
-				m.components.Position.Position.x = m.components.EnemyTeamMember.Position.x + e.components.Position.Position.x;
-				m.components.Position.Position.y = m.components.EnemyTeamMember.Position.y + e.components.Position.Position.y;
+				if ( m.components.Collide.Destroy )
+				{
+					e.components.EnemyTeamLeader.TeamMembers.Delete(mIdx);
+					if ( e.components.EnemyTeamLeader.TeamMembers.length == 0 )
+					{
+						prefabs.CreatePowerUp(m.components.Position.Position.x,m.components.Position.Position.y,0,0);
+					}
+				}
+				else
+				{
+					m.components.Position.Position.x = m.components.EnemyTeamMember.Position.x + e.components.Position.Position.x;
+					m.components.Position.Position.y = m.components.EnemyTeamMember.Position.y + e.components.Position.Position.y;
+				}
 			}
 		}
 		
@@ -886,7 +904,7 @@ SysEnemies = function()
 				e.components.Collide.Destroy = true;
 				if ( e.components.Position && e.components.Visible)
 					CreateExplosion(e.components.Position.Position, e.components.Visible.Colour);
-				if ( e.components.Position )
+				if ( e.components.Position && !e.components.EnemyTeamMember )
 					prefabs.CreatePowerUp(e.components.Position.Position.x,e.components.Position.Position.y,0,0);
 				PlaySound(SOUND_ENEMY_EXPLODE);
 			}
@@ -1544,9 +1562,10 @@ function PrefabManager()
 			entity.AddComponent(CompPhysics());
 			entity.AddComponent(CompScreenWrap());
 			entity.AddComponent(CompEnemyTeamLeader());
-			
-			entity.AddComponent(CompCollide(LAYER_PLAYER | LAYER_PLAYER_SHOT));
-			entity.AddComponent(CompVisible(powerUpData,colour,LAYER_ENEMY));
+			entity.AddComponent(CompGamePos());
+
+			entity.AddComponent(CompCollide());
+//			entity.AddComponent(CompVisible(powerUpData,colour,LAYER_ENEMY));
 			entity.AddComponent(CompPrefab(PREFAB_SWARMLEADER));
 			entity.AddComponent(CompRadar());
 		}
@@ -1565,8 +1584,12 @@ function PrefabManager()
 		ec.Collided = false;
 		ec.Destroy = false;
 
+		var velocityDirection = 1;
+		if ( Math.random() > .5 )
+			velocityDirection = -1;
+		
 		ec = entity.components.Physics
-		ec.Velocity.x = 1;
+		ec.Velocity.x = 4 * velocityDirection;
 		ec.Velocity.y = 0;
 		ec.Acceleration = 1;
 		ec.Drag = 1;
@@ -1579,7 +1602,8 @@ function PrefabManager()
 		// It feels wrong but I dont know where this should happen
 
 		// A vertical line of the enemies
-		for ( var e = 0; e < 6; e++ )
+		var swarmSize = 11;
+		for ( var e = 0; e < swarmSize; e++ )
 		{
 			var entity2 = SwarmAMember.Reclaim();
 			if ( entity2 == null )
@@ -1619,8 +1643,13 @@ function PrefabManager()
 			ec.Drag = 1;
 			
 			ec = entity2.components.EnemyTeamMember
-			ec.Position.x = 0;
-			ec.Position.y = ypos + (e-2.5) * 50;
+			var xp = e * 30;
+			if ( e > Math.floor(swarmSize/2) )
+			{
+				xp = (swarmSize-e-1) * 30;
+			}
+			ec.Position.x = xp * velocityDirection;
+			ec.Position.y = ypos + (e-2.5) * 30;
 			
 			entity2.components.EnemyTeamMember.TeamLeader = entity;
 			
@@ -1761,7 +1790,7 @@ function PrefabManager()
 		return entity;
 	}
 
-	obj.CreateSpawner = function( xpos, ypos, spawnRate, prefabType)
+	obj.CreateSpawner = function( xpos, ypos, spawnRate, prefabType, spawnMax)
 	{
 		var entity = Spawner.Reclaim();
 		if ( entity == null )
@@ -1780,6 +1809,7 @@ function PrefabManager()
 		ec.SpawnRate = spawnRate;
 		ec.ElapsedTime = 0;
 		ec.SpawnPrefabType = prefabType;
+		ec.SpawnMax = spawnMax;
 
 		Spawner.Insert(entity);
 		entities[LAYER_ENEMY].Insert(entity);
@@ -1790,6 +1820,23 @@ function PrefabManager()
 	obj.Delete = function(type, position)
 	{
 		var collection = collections[type];
+		//
+		// Special logic for swarms.
+		// If a swarm member is destroyed 
+		// then remove the member from the swarm leader internal list
+//		var en = collection.data[position];
+//		if ( en.components.EnemyTeamMember)
+//		{
+//			var enl = en.components.EnemyTeamMember.TeamLeader;
+//			for ( var e = 0; e < enl.components.EnemyTeamLeader.TeamMembers.length; e++)
+//			{
+//				if ( enl.components.EnemyTeamLeader.TeamMembers.data[e] === en)
+//				{
+//					enl.components.EnemyTeamLeader.TeamMembers.Delete[e];
+//				}
+//			}
+//		}
+
 		if ( collection.length > 1)
 		{
 //			// Bit of a Hack
@@ -1858,4 +1905,4 @@ function QuickCollection()
 init();
 </script>
 </body>
-</html>	
+</html>
