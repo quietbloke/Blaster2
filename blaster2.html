@@ -52,6 +52,7 @@ function doResize()
 	canvas.style.marginTop = (scrH-height)/2;
 }
 
+// lots of constants
 const SCREEN_WIDTH = 1280;
 const SCREEN_HEIGHT = 768;
 const GAME_WIDTH = SCREEN_WIDTH * 4;
@@ -77,23 +78,52 @@ const PREFAB_ENEMYB = 4;
 const PREFAB_POWERUPS = 5;
 const PREFAB_RADARHUD = 6;
 const PREFAB_SPAWNER = 7;
-const PREFAB_LAST = 7;
+const PREFAB_SWARMLEADER = 8;
+const PREFAB_SWARMMEMBER = 9;
+const PREFAB_LAST = 9;
+
+const COMP_POSITION = 0;
+const COMP_ROTATION = 1;
+const COMP_VISIBLE = 2;
+const COMP_PHYSICS = 3;
+const COMP_PLAYER = 4;
+const COMP_LIFESPAN = 5;
+const COMP_SCREENWRAP = 6;
+const COMP_SCREENBOUNCE = 7;
+const COMP_ENEMYA = 8;
+const COMP_ENEMYB = 9;
+const COMP_POWERUP = 10;
+const COMP_PREFAB = 11;
+const COMP_CAMERA = 12;
+const COMP_GAMEPOS = 13;
+const COMP_RADAR = 14;
+const COMP_COLLIDE = 15;
+const COMP_SPAWNER = 16;
+const COMP_ENEMY_TEAM_LEADER = 17;
+const COMP_ENEMY_TEAM_MEMBER = 18;
+
+const SOUND_SHOT = 0
+const SOUND_POWERUP = 1
+const SOUND_ENEMY_EXPLODE = 2
 
 const FPS = 50;
 
 var entities = {};	// Entities exists in layers
 var systems = {};
 
-var shipData = [["M",-20,-10],["L",20,0],["L",-20,10],["L",-20,-10] ];
-var enemyData = [["M",-10,-10],["L",10,-10],["L",10,10],["L",-10,10],["L",-10,-10] ];
-var powerUpData = [["M",-5,-5],["L",5,5],["M",5,-5],["L",-5,5]];
-var explosionData = [["M",-1,-1],["L",1,-1],["L",1,1],["L",-1,1],["L",-1,-1] ];
-var playerShotData = [["M",-6,-1],["L",6,-1],["L",6,1],["L",-6,1],["L",-6,-1] ];
-var radarBorderData = [["M", GAME_X_MIN / 10-1, GAME_Y_MIN / 10 - 1], 	
-	["L", GAME_X_MIN / 10 - 1, GAME_Y_MAX/10 + 1],
-	["L", GAME_X_MAX / 10 + 1, GAME_Y_MAX/10 + 1],
-	["L", GAME_X_MAX / 10 + 1, GAME_Y_MIN/10 - 1],
-	["L", GAME_X_MIN / 10 - 1, GAME_Y_MIN/10 - 1]];
+const DRAW_DATA_MOVE = 0;
+const DRAW_DATA_LINE = 1;
+
+var shipData = [[DRAW_DATA_MOVE,-20,-10],[DRAW_DATA_LINE,20,0],[DRAW_DATA_LINE,-20,10],[DRAW_DATA_LINE,-20,-10] ];
+var enemyData = [[DRAW_DATA_MOVE,-10,-10],[DRAW_DATA_LINE,10,-10],[DRAW_DATA_LINE,10,10],[DRAW_DATA_LINE,-10,10],[DRAW_DATA_LINE,-10,-10] ];
+var powerUpData = [[DRAW_DATA_MOVE,-5,-5],[DRAW_DATA_LINE,5,5],[DRAW_DATA_MOVE,5,-5],[DRAW_DATA_LINE,-5,5]];
+var explosionData = [[DRAW_DATA_MOVE,-1,-1],[DRAW_DATA_LINE,1,-1],[DRAW_DATA_LINE,1,1],[DRAW_DATA_LINE,-1,1],[DRAW_DATA_LINE,-1,-1] ];
+var playerShotData = [[DRAW_DATA_MOVE,-6,-1],[DRAW_DATA_LINE,6,-1],[DRAW_DATA_LINE,6,1],[DRAW_DATA_LINE,-6,1],[DRAW_DATA_LINE,-6,-1] ];
+var radarBorderData = [[DRAW_DATA_MOVE, GAME_X_MIN / 10-1, GAME_Y_MIN / 10 - 1], 	
+	[DRAW_DATA_LINE, GAME_X_MIN / 10 - 1, GAME_Y_MAX/10 + 1],
+	[DRAW_DATA_LINE, GAME_X_MAX / 10 + 1, GAME_Y_MAX/10 + 1],
+	[DRAW_DATA_LINE, GAME_X_MAX / 10 + 1, GAME_Y_MIN/10 - 1],
+	[DRAW_DATA_LINE, GAME_X_MIN / 10 - 1, GAME_Y_MIN/10 - 1]];
 
 var prefabs = PrefabManager();
 
@@ -101,6 +131,10 @@ var previousTime = (new Date).getTime();
 var timerElasped = 0;
 var timerOverflow = 0;
 var expectedTimeSpan = Math.floor(1000/FPS);
+
+var dwTimeCarriedOver = 0;
+var updateRate = Math.floor(1000/FPS);
+var dwDrawSkipFrames = 0;
 
 init = function()
 {
@@ -135,10 +169,12 @@ init = function()
 		
 		prefabs.CreatePlayer(37,39,38,90);
 
-		prefabs.CreateSpawner(-SCREEN_WIDTH/2+50,0,10,"EnemyA");
-		prefabs.CreateSpawner(SCREEN_WIDTH/2-50,0,10, "EnemyB");
+		prefabs.CreateSpawner(-SCREEN_WIDTH/2+50,0,20,"SwarmA");
+//		prefabs.CreateSpawner(SCREEN_WIDTH/2-50,0,10, "EnemyB");
 		
 		prefabs.CreateRadarHud();
+		
+//		prefabs.CreateSwarmA ( 0,0);
 		
 		timerId = setInterval ( main, Math.floor(1000/FPS));
 	}
@@ -160,41 +196,63 @@ main = function ()
 	l.textContent = fpsText;
 	// end of fps code
 	
-	// Time since we were last called
-	timeElapsed = dwCurrentTime - previousTime + timerOverflow;
+	dwElapsedTime += dwTimeCarriedOver;
 	
-	// figure out how many update frames we should do 
-	var updates = Math.floor(timeElapsed / expectedTimeSpan );
-	previousTime = dwCurrentTime;
-
-	timerOverflow = timeElapsed - (updates * expectedTimeSpan);
-	
-	// if the machine really cant handle it then 
-	// give up and show then a slowed down game
-	if ( updates > 4 ) 
+//		this.dwCurrentTime = (new Date).getTime();	
+//		this.dwElapsedTime = this.dwCurrentTime - this.dwLastUpdateTime + this.dwTimeCarriedOver;
+	if(this.dwElapsedTime >= updateRate)
 	{
-		updates = 4;
-		timerOverflow = 0;
-		console.log("Max frame updates exceeded");
-	}
-	
-	for ( var l = 0; l < updates; l++)
-	{
-		SysCollisions();
-		SysPhysics();
-		SysPlayer();
-		SysEnemies();
-		SysCamera();
-		SysDestroyer();
-	}
-	
-	
-	// and finally do a render
-	ctx.globalAlpha = 0.75;
-	ctx.fillRect(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, SCREEN_WIDTH, SCREEN_HEIGHT);
-	ctx.globalAlpha = 1;
+		if ( this.dwDrawSkipFrames > 0)
+		{
+			this.dwDrawSkipFrames--;
+		}
+		else
+		{
+			ctx.globalAlpha = 0.4;
+			ctx.fillRect(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, SCREEN_WIDTH, SCREEN_HEIGHT);
+			ctx.globalAlpha = 1;
 
-	SysRender();
+			SysRender();
+		}
+
+		// If drawing the screen takes longer than a frame then
+		// find out how many times drawing must be skipped
+		dwDrawElapsedTime = (new Date).getTime() - dwLastUpdateTime + dwTimeCarriedOver - dwElapsedTime;
+		if ( this.dwDrawElapsedTime > this.updateRate)
+		{
+			dwDrawSkipFrames = Math.floor(dwDrawElapsedTime / updateRate);
+			console.log("skipping " + dwDrawSkipFrames);
+		}
+
+		var frames = Math.floor(dwElapsedTime / updateRate );
+		if (frames > 4 )
+			frames = 4;
+		dwTimeCarriedOver = dwElapsedTime % updateRate;
+		dwLastUpdateTime = dwCurrentTime;
+
+		for ( var f = 0; f < frames; f++)
+		{
+			SysCollisions();
+			SysPhysics();
+			SysPlayer();
+			SysEnemies();
+			SysCamera();
+			SysDestroyer();
+		}
+	}
+}
+
+GameState = function()
+{
+	obj = {};
+	
+	obj.Init = function()
+	{
+	}
+
+	obj.Update = function()
+	{
+	}
 }
 
 var nextId = 0;
@@ -222,24 +280,6 @@ Entity = function()
 // components have a name and can contain a block of data
 // For the moment all components are prefixed with Comp
 
-const COMP_POSITION = 0;
-const COMP_ROTATION = 1;
-const COMP_VISIBLE = 2;
-const COMP_PHYSICS = 3;
-const COMP_PLAYER = 4;
-const COMP_LIFESPAN = 5;
-const COMP_SCREENWRAP = 6;
-const COMP_SCREENBOUNCE = 7;
-const COMP_ENEMYA = 8;
-const COMP_ENEMYB = 9;
-const COMP_POWERUP = 10;
-const COMP_PREFAB = 11;
-const COMP_CAMERA = 12;
-const COMP_GAMEPOS = 13;
-const COMP_RADAR = 14;
-const COMP_COLLIDE = 15;
-const COMP_SPAWNER = 16;
-
 CompPosition = function (xpos, ypos)
 {
 	return {"Name" : "Position", 
@@ -266,7 +306,6 @@ CompVisible = function (drawData,colour,layer)
 		var p = drawData[pIdx];
 		drawDataTransformed[pIdx] = [p[0],p[1], p[2]];
 	}
-
 	
 	return {"Name" : "Visible", 
 		"Drawdata" : drawData,
@@ -371,6 +410,21 @@ CompSpawner = function(xpos,ypos,spawnRate, prefabType)
 		"ElapsedTime" : 0};
 }
 
+CompEnemyTeamLeader = function(xpos,ypos)
+{	
+	return {"Name" : "EnemyTeamLeader",
+		"TeamMembers" : QuickCollection(),
+		"YPosAngleOffset" : 0
+		};
+}
+
+CompEnemyTeamMember = function(xOff,yOff)
+{	
+	return {"Name" : "EnemyTeamMember",
+			"Position" : new Vector(xOff,yOff),
+			"TeamLeader" : Entity() };
+}
+
 // Systems will perform actions on any entities that contains all the 
 // components they require.
 // For the moment all Systems are prefixed with Sys
@@ -455,7 +509,7 @@ SysRender = function()
 						var p = transformedData[pIdx];
 						scrX = pos.x + p[1];
 						scrY = pos.y + p[2];
-						if ( p[0] == 'M')
+						if ( p[0] == DRAW_DATA_MOVE)
 						{
 							ctx.moveTo(scrX,scrY);
 						}
@@ -720,7 +774,7 @@ SysEnemies = function()
 		{
 			var spawner = e.components.Spawner;
 			spawner.ElapsedTime++;
-			if ( prefabs.Count(spawner.SpawnPrefabType) < 100)
+			if ( prefabs.Count(spawner.SpawnPrefabType) < 50)
 			{
 				if ( spawner.ElapsedTime > spawner.SpawnRate)
 				{
@@ -736,10 +790,28 @@ SysEnemies = function()
 						prefabs.CreateEnemyA(xpos,ypos);
 					if ( spawner.SpawnPrefabType == "EnemyB")
 						prefabs.CreateEnemyB(xpos,ypos);
+					if ( spawner.SpawnPrefabType == "SwarmA")
+						prefabs.CreateSwarmA(xpos,ypos);
 				}
 			}
 		}
+		
+		if ( e.components.EnemyTeamLeader)
+		{
+			e.components.Position.Position.y += Math.cos(e.components.EnemyTeamLeader.YPosAngleOffset)*2;
+			e.components.EnemyTeamLeader.YPosAngleOffset += Math.PI/50;
+			// Set the world positions of the members
+			// relate to our position
+			for ( var mIdx = 0; mIdx < e.components.EnemyTeamLeader.TeamMembers.length; mIdx++)
+			{
+				var m = e.components.EnemyTeamLeader.TeamMembers.data[mIdx];
+				m.components.Position.Position.x = m.components.EnemyTeamMember.Position.x + e.components.Position.Position.x;
+				m.components.Position.Position.y = m.components.EnemyTeamMember.Position.y + e.components.Position.Position.y;
+			}
+		}
+		
 	}
+	
 	// find the player
 	var playerEntity = null;
 	for ( var eIdx=0; eIdx < entities[LAYER_PLAYER].length; eIdx++)
@@ -800,7 +872,7 @@ SysEnemies = function()
 			if ( e.components.Collide.Collided)
 			{
 				e.components.Collide.Destroy = true;
-				PlaySound(1);
+				PlaySound(SOUND_POWERUP);
 			}
 		}
 	}
@@ -816,7 +888,7 @@ SysEnemies = function()
 					CreateExplosion(e.components.Position.Position, e.components.Visible.Colour);
 				if ( e.components.Position )
 					prefabs.CreatePowerUp(e.components.Position.Position.x,e.components.Position.Position.y,0,0);
-				PlaySound(2);
+				PlaySound(SOUND_ENEMY_EXPLODE);
 			}
 		}
 	}
@@ -894,7 +966,7 @@ SysPlayer = function()
 					direction.SetMagnitude(12);
 					CreateShot(shotpos, direction, rotation);
 					player.ShotElapsedTime = 0;
-					PlaySound(0);
+					PlaySound(SOUND_SHOT);
 				}
 				
 				e.components.Rotation.Rotation = rotation;
@@ -1014,17 +1086,9 @@ Vector = function(x,y)
 
 BuildSounds = function ()
 {
-	// player shot
 	audio[0] = CreateSound(2000,200,0,500,.5,0,.5,.15);
-	// player explode
 	audio[1] = CreateSound(7000,4000,0,0,1,0,0.25,.125);
-	// invader move
-//	audio[2] = CreateSound(300,300,2000,150,.5,0.0,.2,.2);
-//	audio[3] = CreateSound(200,200,2000,150,.5,0.0,.2,.2);
-//	audio[4] = CreateSound(250,250,2000,150,.5,0.0,.2,.2);
-//	audio[5] = CreateSound(200,200,2000,150,.5,0.0,.2,.2);
-	// invader explode
-	audio[2] = CreateSound(100,0,4000,100,1,0.0,.75,.75);
+	audio[2] = CreateSound(250,150,500,80,1,0,2,2);
 }
 
 CreateSound = function ( startFreq, endFreq, noiseFreq, noiseFreqAdj, startVol, endVol, duration, freqDuration)
@@ -1053,7 +1117,7 @@ PlaySound = function(i)
 	var a=audio[i];
 	a.pause();
 	a.currentTime=0;
-	a.play();
+	a.play().catch(function(e) { console.log("whoops.. cant play right now");});
 }
 
 var QBSynthJS = new function()
@@ -1248,6 +1312,8 @@ function PrefabManager()
 	var PowerUps = collections[PREFAB_POWERUPS];
 	var RadarHud = collections[PREFAB_RADARHUD];
 	var Spawner = collections[PREFAB_SPAWNER];
+	var SwarmALeader = collections[PREFAB_SWARMLEADER];
+	var SwarmAMember = collections[PREFAB_SWARMMEMBER];
 
 	obj.Count = function(type)
 	{
@@ -1255,6 +1321,8 @@ function PrefabManager()
 			return EnemyA.length;
 		if ( type == "EnemyB")
 			return EnemyB.length;
+		if ( type == "SwarmA")
+			return SwarmAMember.length;
 	}
 	
 	obj.CreatePlayer = function (keyleft, keyright, keyaccelerate, keyshoot)
@@ -1420,7 +1488,7 @@ function PrefabManager()
 		if ( entity == null )
 		{
 			var entity = Entity();
-			var colour = "Green";
+			var colour = "Cyan";
 
 			entity.AddComponent(CompPosition());
 			entity.AddComponent(CompPhysics());
@@ -1461,6 +1529,107 @@ function PrefabManager()
 		EnemyB.Insert(entity);
 		entities[LAYER_ENEMY].Insert(entity);
 
+		return entity;
+	}
+	
+	obj.CreateSwarmA = function ( xpos, ypos)
+	{
+		var entity = SwarmALeader.Reclaim();
+		if ( entity == null )
+		{
+			entity = Entity();
+			var colour = "Pink";
+
+			entity.AddComponent(CompPosition());
+			entity.AddComponent(CompPhysics());
+			entity.AddComponent(CompScreenWrap());
+			entity.AddComponent(CompEnemyTeamLeader());
+			
+			entity.AddComponent(CompCollide(LAYER_PLAYER | LAYER_PLAYER_SHOT));
+			entity.AddComponent(CompVisible(powerUpData,colour,LAYER_ENEMY));
+			entity.AddComponent(CompPrefab(PREFAB_SWARMLEADER));
+			entity.AddComponent(CompRadar());
+		}
+
+		ec = entity.components.Prefab;
+		ec.Position = SwarmALeader.length;
+		
+		var ec = entity.components.Position;
+		ec.Position.x = xpos;
+		ec.Position.y = ypos;
+
+//		var ec = entity.components.Rotation;
+//		ec.Rotation = 0;
+		
+		ec = entity.components.Collide
+		ec.Collided = false;
+		ec.Destroy = false;
+
+		ec = entity.components.Physics
+		ec.Velocity.x = 1;
+		ec.Velocity.y = 0;
+		ec.Acceleration = 1;
+		ec.Drag = 1;
+
+		SwarmALeader.Insert(entity);
+		entities[LAYER_ENEMY].Insert(entity);
+
+		// Now build the swarm members
+		// Should I be doing this here ?
+		// It feels wrong but I dont know where this should happen
+
+		// A vertical line of the enemies
+		for ( var e = 0; e < 6; e++ )
+		{
+			var entity2 = SwarmAMember.Reclaim();
+			if ( entity2 == null )
+			{
+				entity2 = Entity();
+				var colour = "Orange";
+
+				entity2.AddComponent(CompPosition());
+				entity2.AddComponent(CompPhysics());
+				entity2.AddComponent(CompScreenWrap());
+				entity2.AddComponent(CompEnemyTeamMember());
+				
+				entity2.AddComponent(CompCollide(LAYER_PLAYER | LAYER_PLAYER_SHOT));
+				entity2.AddComponent(CompVisible(enemyData,colour,LAYER_ENEMY));
+				entity2.AddComponent(CompPrefab(PREFAB_SWARMMEMBER));
+				entity2.AddComponent(CompRadar());
+			}
+
+			ec = entity2.components.Prefab;
+			ec.Position = SwarmAMember.length;
+			
+			var ec = entity2.components.Position;
+			ec.Position.x = xpos;
+			ec.Position.y = ypos;
+
+	//		var ec = entity.components.Rotation;
+	//		ec.Rotation = 0;
+			
+			ec = entity2.components.Collide
+			ec.Collided = false;
+			ec.Destroy = false;
+
+			ec = entity2.components.Physics
+			ec.Velocity.x = 0;
+			ec.Velocity.y = 0;
+			ec.Acceleration = 1;
+			ec.Drag = 1;
+			
+			ec = entity2.components.EnemyTeamMember
+			ec.Position.x = 0;
+			ec.Position.y = ypos + (e-2.5) * 50;
+			
+			entity2.components.EnemyTeamMember.TeamLeader = entity;
+			
+			entity.components.EnemyTeamLeader.TeamMembers.Insert(entity2);
+			
+			SwarmAMember.Insert(entity2);
+			entities[LAYER_ENEMY].Insert(entity2);
+		}
+		
 		return entity;
 	}
 	
@@ -1642,7 +1811,13 @@ function QuickCollection()
 	
 	obj.Insert = function(item)
 	{
-		obj.data[obj.length] = item;
+		// if the item had been reclaimed then the item is already in the array
+		if ( obj.data[obj.length] != item )
+		{
+			obj.data[obj.length] = item;
+			console.log("added item to quicklist");
+		}
+		
 		obj.length++;
 	}
 	
@@ -1683,4 +1858,4 @@ function QuickCollection()
 init();
 </script>
 </body>
-</html>
+</html>	
