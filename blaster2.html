@@ -169,7 +169,7 @@ init = function()
 		
 		prefabs.CreatePlayer(37,39,38,90);
 
-		prefabs.CreateSpawner(-GAME_WIDTH/2,0,125,"SwarmA", 14);
+		prefabs.CreateSpawner(-GAME_WIDTH/2,0,200,"SwarmA", 80);
 		prefabs.CreateSpawner(GAME_WIDTH/2,0,40,"EnemyB", 50);
 		prefabs.CreateSpawner(-GAME_WIDTH/2,0,40, "EnemyA", 50);
 		
@@ -424,6 +424,7 @@ CompEnemyTeamMember = function(xOff,yOff)
 {	
 	return {"Name" : "EnemyTeamMember",
 			"Position" : new Vector(xOff,yOff),
+			"DesiredPosition" : new Vector(xOff,yOff),
 			"TeamLeader" : Entity() };
 }
 
@@ -805,16 +806,18 @@ SysEnemies = function()
 				e.components.Collide.Destroy = true;
 			}
 			
-			e.components.Position.Position.y += Math.cos(e.components.EnemyTeamLeader.YPosAngleOffset)*2;
+			e.components.Position.Position.y += Math.cos(e.components.EnemyTeamLeader.YPosAngleOffset)*4;
 			e.components.EnemyTeamLeader.YPosAngleOffset += Math.PI/50;
 			// Set the world positions of the members
 			// relate to our position
+			var memberDied = false;
 			for ( var mIdx = e.components.EnemyTeamLeader.TeamMembers.length - 1; mIdx >= 0; mIdx--)
 			{
 				var m = e.components.EnemyTeamLeader.TeamMembers.data[mIdx];
 				if ( m.components.Collide.Destroy )
 				{
 					e.components.EnemyTeamLeader.TeamMembers.Delete(mIdx);
+					memberDied = true;
 					if ( e.components.EnemyTeamLeader.TeamMembers.length == 0 )
 					{
 						prefabs.CreatePowerUp(m.components.Position.Position.x,m.components.Position.Position.y,0,0);
@@ -822,9 +825,30 @@ SysEnemies = function()
 				}
 				else
 				{
+					if ( m.components.EnemyTeamMember.Position.x < m.components.EnemyTeamMember.DesiredPosition.x)
+						m.components.EnemyTeamMember.Position.x++;
+					else
+						m.components.EnemyTeamMember.Position.x--;
+					if ( m.components.EnemyTeamMember.Position.y < m.components.EnemyTeamMember.DesiredPosition.y)
+						m.components.EnemyTeamMember.Position.y++;
+					else
+						m.components.EnemyTeamMember.Position.y--;	
 					m.components.Position.Position.x = m.components.EnemyTeamMember.Position.x + e.components.Position.Position.x;
 					m.components.Position.Position.y = m.components.EnemyTeamMember.Position.y + e.components.Position.Position.y;
 				}
+			}
+			if ( memberDied && e.components.EnemyTeamLeader.TeamMembers.length != 0)
+			{
+				// At least 1 team member died so recalculate desired positions
+				var swarmSize = e.components.EnemyTeamLeader.TeamMembers.length;
+				for ( var mIdx = e.components.EnemyTeamLeader.TeamMembers.length - 1; mIdx >= 0; mIdx--)
+				{
+					var m = e.components.EnemyTeamLeader.TeamMembers.data[mIdx];
+
+					m.components.EnemyTeamMember.DesiredPosition.y = (mIdx - (swarmSize / 2)) * 30;
+					m.components.EnemyTeamMember.DesiredPosition.x = Math.abs(mIdx - (swarmSize / 2)) * 30;
+				}
+
 			}
 		}
 		
@@ -1643,13 +1667,18 @@ function PrefabManager()
 			ec.Drag = 1;
 			
 			ec = entity2.components.EnemyTeamMember
-			var xp = e * 30;
-			if ( e > Math.floor(swarmSize/2) )
-			{
-				xp = (swarmSize-e-1) * 30;
-			}
-			ec.Position.x = xp * velocityDirection;
-			ec.Position.y = ypos + (e-2.5) * 30;
+//			var xp = e * 10;
+//			if ( e > Math.floor(swarmSize/2) )
+//			{
+//				xp = (swarmSize-e-1) * 10;
+//			}
+//			ec.Position.x = xp * velocityDirection;
+//			ec.Position.y = ypos + (e-2.5) * 35;
+ec.Position.x = 0;
+ec.Position.y = 0;
+//ec.Position.y = (e - (swarmSize / 2)) * 30;
+ec.DesiredPosition.x = Math.abs(e - (swarmSize / 2)) * 30;;
+ec.DesiredPosition.y = (e - (swarmSize / 2)) * 30;
 			
 			entity2.components.EnemyTeamMember.TeamLeader = entity;
 			
